@@ -127,7 +127,11 @@ Tracking the master instruction's Development Order (section 35):
       the `Livewire::addPersistentMiddleware()` note above** — this also
       means Stage 3/4 save flows were silently broken until this fix and have
       since been re-verified working.
-- [ ] Stage 6 — Sales
+- [x] **Stage 6 — Sales**: sales history (date range + status filters, cashiers
+      see only their own sales, owners see all), sale detail with items and
+      void info, `VoidSaleService` (restores ready-to-sell inventory, cancels
+      a non-completed kitchen order, writes an audit log; owner-only both in
+      the UI and re-checked server-side inside the action method).
 - [ ] Stage 7 — Kitchen
 - [ ] Stage 8 — Expenses
 - [ ] Stage 9 — Dashboard and Reports

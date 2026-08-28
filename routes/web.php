@@ -27,6 +27,8 @@ Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(functi
 
     Route::middleware('role:owner,cashier')->group(function () {
         Route::livewire('/pos', 'pages::tenant.pos.index')->name('pos');
+        Route::livewire('/sales', 'pages::tenant.sales.index')->name('sales.index');
+        Route::livewire('/sales/{sale}', 'pages::tenant.sales.show')->name('sales.show');
     });
 
     Route::middleware('role:owner')->group(function () {
