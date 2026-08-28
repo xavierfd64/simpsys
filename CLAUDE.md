@@ -132,7 +132,11 @@ Tracking the master instruction's Development Order (section 35):
       void info, `VoidSaleService` (restores ready-to-sell inventory, cancels
       a non-completed kitchen order, writes an audit log; owner-only both in
       the UI and re-checked server-side inside the action method).
-- [ ] Stage 7 — Kitchen
+- [x] **Stage 7 — Kitchen**: `KitchenService` enforces the
+      pending→preparing→ready→completed pipeline (cancelled/completed orders
+      can't advance further), tabbed board (owner + kitchen staff) with
+      per-card live elapsed timers (Alpine, ticks between polls) and an
+      opt-out `wire:poll.10s` auto-refresh.
 - [ ] Stage 8 — Expenses
 - [ ] Stage 9 — Dashboard and Reports
 - [ ] Stage 10 — Users and Settings

@@ -31,6 +31,10 @@ Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(functi
         Route::livewire('/sales/{sale}', 'pages::tenant.sales.show')->name('sales.show');
     });
 
+    Route::middleware('role:owner,kitchen_staff')->group(function () {
+        Route::livewire('/kitchen', 'pages::tenant.kitchen.index')->name('kitchen');
+    });
+
     Route::middleware('role:owner')->group(function () {
         Route::livewire('/settings', 'pages::tenant.settings')->name('settings');
 
