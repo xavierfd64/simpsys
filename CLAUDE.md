@@ -137,7 +137,9 @@ Tracking the master instruction's Development Order (section 35):
       can't advance further), tabbed board (owner + kitchen staff) with
       per-card live elapsed timers (Alpine, ticks between polls) and an
       opt-out `wire:poll.10s` auto-refresh.
-- [ ] Stage 8 — Expenses
+- [x] **Stage 8 — Expenses**: expense categories, expenses (amount/date/
+      category/payment method/receipt image/notes), date-range filtered
+      history with a running total, owner-only.
 - [ ] Stage 9 — Dashboard and Reports
 - [ ] Stage 10 — Users and Settings
 - [ ] Stage 11 — SaaS and Super Admin

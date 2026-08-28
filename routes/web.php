@@ -42,6 +42,7 @@ Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(functi
         Route::livewire('/products/{product}', 'pages::tenant.products.show')->name('products.show');
         Route::livewire('/inventory', 'pages::tenant.inventory.index')->name('inventory.index');
         Route::livewire('/supplies', 'pages::tenant.supplies.index')->name('supplies.index');
+        Route::livewire('/expenses', 'pages::tenant.expenses.index')->name('expenses.index');
     });
 });
 
