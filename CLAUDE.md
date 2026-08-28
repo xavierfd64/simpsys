@@ -127,6 +127,22 @@ shared-hosting-appropriate.
   `->forceFill([...])->save()` after the guarded `create()`. Also fixed a
   real latent instance of this: `TenantOnboardingService::register()` was
   silently failing to mark self-registered owners' `email_verified_at`.
+- **A compatibility gate runs before Composer's autoloader is even
+  required.** `bootstrap/preflight.php` (required from `public/index.php`
+  before `vendor/autoload.php`) is deliberately zero-dependency plain PHP —
+  an incompatible PHP version can fatal the instant a vendor file is merely
+  parsed, so this can't reference any Composer/Laravel class. It checks the
+  real PHP version floor (read from `composer.json`'s `require.php`, not
+  hardcoded, so it can't drift from `InstallerService::requirements()`'s
+  own copy of the same read), required extensions, that `vendor/` was
+  actually uploaded, and writable storage paths (best-effort auto-creating/
+  chmod-ing them first). On failure it renders
+  `bootstrap/preflight-error.php` (plain HTML/inline CSS — Blade isn't
+  available yet) and exits with 503, instead of the bare, unexplained
+  HTTP 500 a PHP-version mismatch or missing `vendor/` would otherwise
+  produce. Confirmed against this sandbox's own PHP build, which is
+  genuinely missing `bcmath` — real request, real 503, real diagnostic
+  listing exactly that.
 - **The whole app must run before a database exists.** `/install` (Stage 13)
   has to render — including its own requirements/database-config steps —
   before any DB connection is configured, and before `.env` even exists on

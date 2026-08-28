@@ -5,6 +5,12 @@ use Illuminate\Http\Request;
 
 define('LARAVEL_START', microtime(true));
 
+// Compatibility gate — must run before anything Composer/Laravel provides,
+// since an incompatible PHP version or a missing vendor/ folder can fatal
+// the instant such a file is even required. Exits with a clear diagnostic
+// page instead of a bare HTTP 500 when something is actually wrong.
+require __DIR__.'/../bootstrap/preflight.php';
+
 // Determine if the application is in maintenance mode...
 if (file_exists($maintenance = __DIR__.'/../storage/framework/maintenance.php')) {
     require $maintenance;

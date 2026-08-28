@@ -29,15 +29,23 @@ class InstallerService
      */
     public function requirements(): array
     {
+        // Mirrors bootstrap/preflight.php's own read of composer.json — that
+        // file runs before Composer's autoloader exists so it can't share
+        // code with this class, but both must report the same real
+        // requirement rather than two hardcoded numbers drifting apart.
+        $constraint = json_decode(file_get_contents(base_path('composer.json')), true)['require']['php'] ?? '^8.3';
+        $displayVersion = ltrim($constraint, '^>=~ ');
+        $requiredVersion = implode('.', array_slice(explode('.', $displayVersion.'.0.0'), 0, 3));
+
         $checks = [
             [
-                'label' => 'PHP 8.3 or higher',
-                'passed' => version_compare(PHP_VERSION, '8.3.0', '>='),
+                'label' => "PHP {$displayVersion} or higher",
+                'passed' => version_compare(PHP_VERSION, $requiredVersion, '>='),
                 'detail' => 'Detected PHP '.PHP_VERSION,
             ],
         ];
 
-        $extensions = ['pdo', 'pdo_mysql', 'mbstring', 'openssl', 'tokenizer', 'xml', 'ctype', 'json', 'bcmath', 'fileinfo', 'curl'];
+        $extensions = ['pdo', 'pdo_mysql', 'mbstring', 'openssl', 'tokenizer', 'xml', 'ctype', 'json', 'bcmath', 'fileinfo', 'curl', 'dom'];
 
         foreach ($extensions as $extension) {
             $checks[] = [

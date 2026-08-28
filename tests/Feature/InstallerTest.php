@@ -20,6 +20,21 @@ class InstallerTest extends TestCase
         parent::tearDown();
     }
 
+    public function test_preflight_gate_runs_standalone_without_composer_or_laravel(): void
+    {
+        // preflight.php runs before vendor/autoload.php is required, so it
+        // must survive execution with no autoloader at all — this is the
+        // one guarantee that can't be verified by any test that boots
+        // through the normal Laravel testing harness.
+        $script = base_path('bootstrap/preflight.php');
+
+        $output = shell_exec('php '.escapeshellarg($script).' 2>&1');
+
+        $this->assertIsString($output);
+        $this->assertStringNotContainsString('Fatal error', $output);
+        $this->assertStringNotContainsString('Uncaught', $output);
+    }
+
     public function test_env_editor_updates_existing_keys_and_appends_missing_ones(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'env');

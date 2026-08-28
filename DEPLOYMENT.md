@@ -21,10 +21,28 @@ account.
 
 ## 2. Open the site
 
-Visit your domain in a browser. Since the app isn't installed yet, you'll be
-sent straight to `/install` automatically.
+Visit your domain in a browser.
 
-The installer will:
+If your hosting account doesn't meet a hard requirement — wrong PHP version,
+a missing PHP extension, the `vendor/` folder wasn't included in the upload,
+or a folder PHP needs to write to isn't writable — you'll see a plain
+diagnostic page explaining exactly what's wrong and how to fix it (usually a
+one-click PHP version switch or extension toggle in your host's control
+panel), instead of a generic server error. This check runs before anything
+else, so it always has something useful to say even if the app itself can't
+start yet. Fix whatever it lists and reload the page.
+
+**Requires PHP 8.3 or higher.** This isn't an arbitrary choice — it's the
+actual minimum the underlying Laravel framework version requires, so it
+can't be lowered without using an older, unsupported framework version. Most
+modern shared hosts (Z.com included) offer PHP 8.3 as a dropdown in the
+control panel (often called "PHP Version" or "MultiPHP Manager"); very
+low-end or free hosting plans sometimes cap out on an older PHP version,
+which the diagnostic page above will tell you plainly rather than leaving
+you to guess at a generic error.
+
+Once your server passes that check, you'll be sent straight to `/install`
+automatically. The installer will:
 
 1. **Check your server** — PHP version, required extensions, and that
    `storage/`, `bootstrap/cache/`, and `.env` are writable. Fix anything
