@@ -23,6 +23,8 @@ new #[Layout('layouts.app')] #[Title('Product Inventory')] class extends Compone
 
     public string $movement_type = 'stock_added';
 
+    public string $direction = 'add';
+
     public string $quantity = '';
 
     public string $note = '';
@@ -58,7 +60,10 @@ new #[Layout('layouts.app')] #[Title('Product Inventory')] class extends Compone
 
         $product = Product::findOrFail($this->adjustingId);
         $type = ProductInventoryMovementType::from($this->movement_type);
-        $delta = $type->isDeduction() ? -1 * (int) $this->quantity : (int) $this->quantity;
+        $isDeduction = $type === ProductInventoryMovementType::Adjustment
+            ? $this->direction === 'remove'
+            : $type->isDeduction();
+        $delta = $isDeduction ? -1 * (int) $this->quantity : (int) $this->quantity;
 
         try {
             $inventory->adjust($product, $delta, $type, $this->note ?: null, Auth::user());
@@ -146,6 +151,15 @@ new #[Layout('layouts.app')] #[Title('Product Inventory')] class extends Compone
                             @endforeach
                         </select>
                     </div>
+                    @if ($movement_type === 'adjustment')
+                        <div>
+                            <label class="mb-1 block text-sm font-medium text-ink">Direction</label>
+                            <select wire:model="direction" class="w-full rounded-lg border border-hairline px-3 py-2 text-sm">
+                                <option value="add">Add to stock</option>
+                                <option value="remove">Remove from stock</option>
+                            </select>
+                        </div>
+                    @endif
                     <div>
                         <label class="mb-1 block text-sm font-medium text-ink">Quantity</label>
                         <input wire:model="quantity" type="number" min="1" class="w-full rounded-lg border border-hairline px-3 py-2 text-sm">

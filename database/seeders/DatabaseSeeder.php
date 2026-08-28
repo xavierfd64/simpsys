@@ -136,5 +136,29 @@ class DatabaseSeeder extends Seeder
                 $inventoryService->adjust($product, $data['stock'], ProductInventoryMovementType::StockAdded, 'Initial stock');
             }
         }
+
+        $packagingCategory = $tenant->supplyCategories()->firstOrCreate(['name' => 'Packaging']);
+        $suppliesData = [
+            ['name' => 'Cooking Oil', 'unit' => 'liters', 'threshold' => 5, 'stock' => 12],
+            ['name' => 'Plastic Cups', 'unit' => 'pieces', 'threshold' => 50, 'stock' => 15],
+        ];
+
+        $supplyInventoryService = app(\App\Services\SupplyInventoryService::class);
+
+        foreach ($suppliesData as $data) {
+            $supply = $tenant->supplies()->firstOrCreate(
+                ['name' => $data['name']],
+                [
+                    'supply_category_id' => $packagingCategory->id,
+                    'unit' => $data['unit'],
+                    'low_stock_threshold' => $data['threshold'],
+                    'is_active' => true,
+                ]
+            );
+
+            if ($supply->currentStock() === 0.0 && $data['stock'] > 0) {
+                $supplyInventoryService->adjust($supply, $data['stock'], \App\Enums\SupplyInventoryMovementType::StockAdded, 'Initial stock');
+            }
+        }
     }
 }

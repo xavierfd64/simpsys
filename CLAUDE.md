@@ -100,7 +100,10 @@ Tracking the master instruction's Development Order (section 35):
       rejects negative stock) + full movement history, Products CRUD with
       image upload, dedicated Inventory page for stock adjustments/low-stock
       view, `BelongsToTenant` global-scope trait introduced here.
-- [ ] Stage 4 — Supplies
+- [x] **Stage 4 — Supplies**: supply categories, supplies (with unit + decimal
+      stock), `SupplyInventoryService` (same locked/transactional/non-negative
+      pattern as products, decimal quantities), CRUD + adjust + history UI.
+      Manual deduction only — no recipe/BOM auto-deduction, per spec V1 scope.
 - [ ] Stage 5 — POS
 - [ ] Stage 6 — Sales
 - [ ] Stage 7 — Kitchen
