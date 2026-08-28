@@ -30,7 +30,7 @@ class BusinessSettingsTest extends TestCase
         Livewire::test('pages::tenant.settings')
             ->set('name', 'New Business Name')
             ->set('timezone', 'Asia/Manila')
-            ->call('save')
+            ->call('saveBusinessInfo')
             ->assertHasNoErrors();
 
         $this->assertSame('New Business Name', $tenant->fresh()->name);

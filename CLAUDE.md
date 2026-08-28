@@ -148,7 +148,11 @@ Tracking the master instruction's Development Order (section 35):
       owner → dashboard, cashier → POS, kitchen staff → kitchen board, since
       the dashboard itself is now owner-only rather than open to any tenant
       member.
-- [ ] Stage 10 — Users and Settings
+- [x] **Stage 10 — Users and Settings**: Settings page now tabbed (Business
+      Info / Payment Methods / Order Types / Kitchen); Users page (add/edit/
+      deactivate/reset password) with plan `user_limit` enforcement — an
+      owner can't lock themselves out via deactivate, and can't exceed the
+      subscription's seat count.
 - [ ] Stage 11 — SaaS and Super Admin
 - [ ] Stage 12 — QA and Security
 - [ ] Stage 13 — Z.com Deployment (WordPress-style installer)
