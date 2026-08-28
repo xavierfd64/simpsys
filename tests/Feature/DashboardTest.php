@@ -14,6 +14,7 @@ use App\Services\ProductInventoryService;
 use App\Services\SaleService;
 use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -63,7 +64,7 @@ class DashboardTest extends TestCase
         // (UTC+8) — a naive whereDate('created_at', ...) against the raw
         // UTC-stored timestamp would bucket this sale under Jan 1 and miss
         // it entirely when the tenant asks for "today" (Jan 2, their time).
-        \Illuminate\Support\Carbon::setTestNow('2026-01-01 20:00:00');
+        Carbon::setTestNow('2026-01-01 20:00:00');
 
         $tenant = Tenant::factory()->create(['timezone' => 'Asia/Manila']);
         $cashier = User::factory()->create();
@@ -82,7 +83,7 @@ class DashboardTest extends TestCase
             ->assertSee('Jan 2, 2026')
             ->assertSee('₱50.00');
 
-        \Illuminate\Support\Carbon::setTestNow();
+        Carbon::setTestNow();
     }
 
     public function test_only_owner_can_access_the_dashboard(): void

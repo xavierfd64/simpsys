@@ -4,6 +4,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
+Route::livewire('/install', 'pages::install.wizard')->name('install');
+
 Route::livewire('/', 'pages::public.landing')->name('home');
 Route::livewire('/pricing', 'pages::public.pricing')->name('pricing');
 

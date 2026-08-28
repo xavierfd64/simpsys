@@ -113,6 +113,32 @@ shared-hosting-appropriate.
   stored as integer centavos — use `App\Support\Money::format()`/`toCents()`.
   Subscription plan prices are a deliberate exception: whole-peso integers,
   since those are simple admin-set numbers with no centavo input.
+- **`User`'s `#[Fillable(['name', 'email', 'password'])]` silently drops
+  everything else on mass assignment** — `is_platform_admin`,
+  `email_verified_at`, `is_active` are deliberately left out so they can
+  never be set from ordinary form/request input, but that also means
+  `User::create([...'is_platform_admin' => true])` from *trusted* code
+  (found while building the installer's admin-creation step) just discards
+  the key with no error and defaults to `false`/`null`. The one exception:
+  Laravel's `Seeder` base class unguards models for the duration of a
+  seeder run, so `DatabaseSeeder`'s identical-looking `firstOrCreate(...)`
+  works fine — this is easy to miss and assume the pattern is safe
+  everywhere. Any other trusted call site setting these fields must
+  `->forceFill([...])->save()` after the guarded `create()`. Also fixed a
+  real latent instance of this: `TenantOnboardingService::register()` was
+  silently failing to mark self-registered owners' `email_verified_at`.
+- **The whole app must run before a database exists.** `/install` (Stage 13)
+  has to render — including its own requirements/database-config steps —
+  before any DB connection is configured, and before `.env` even exists on
+  a fresh deploy. `bootstrap/ensure-env.php` (required from `public/index.php`
+  before the framework boots) bootstraps a minimal file-backed `.env`
+  (generated `APP_KEY`, file session/cache, sync queue) on the very first
+  request if none exists, which is what lets sessions/CSRF/Livewire work at
+  all pre-install. `App\Http\Middleware\RedirectIfNotInstalled` (global,
+  prepended to the `web` group) gates every other route on
+  `storage/app/installed.lock` existing, and is a no-op in the `testing`
+  environment specifically so it can't redirect every feature test to
+  `/install`.
 
 ## Stage progress
 
@@ -202,7 +228,25 @@ Tracking the master instruction's Development Order (section 35):
       tenant-scoping coverage across every tenant-owned model, and that wide
       tables scroll within their own container rather than the page (checked
       `document.body.scrollWidth` against viewport on a real mobile size).
-- [ ] Stage 13 — Z.com Deployment (WordPress-style installer)
+- [x] **Stage 13 — Z.com Deployment**: WordPress-style `/install` wizard
+      (`InstallerService`, `resources/views/pages/install/wizard.blade.php`)
+      — requirements check (PHP version/extensions/writable paths), database
+      form (raw PDO test against submitted credentials before anything is
+      saved, then writes `.env` and hot-swaps Laravel's runtime DB config in
+      the same request via `DB::purge()` so migrate+seed can run
+      immediately, no reload needed), Super Admin account creation, then
+      locks via `storage/app/installed.lock`. No manual `.env` edit, SQL
+      import, or Composer/Artisan command required from the installer/user
+      at any step. `RedirectIfNotInstalled` middleware sends every request
+      to `/install` until that lock exists, and away from `/install` once it
+      does (reinstall prevention). Root-level `index.php`/`.htaccess` shim
+      added so the app also works when a host's DocumentRoot can't be
+      pointed at `public/` (see `DEPLOYMENT.md`). Verified against a real
+      fresh state (removed `.env` and the lock file, hit a live
+      `php artisan serve`): auto-bootstrapped `.env` correctly, redirected
+      to `/install`, requirements step correctly flagged a genuinely missing
+      `bcmath` extension in the test environment and blocked continuing,
+      and `/install` correctly redirected away once locked.
 
 ## Demo accounts (seeded, password `password`)
 

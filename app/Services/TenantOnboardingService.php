@@ -38,8 +38,11 @@ class TenantOnboardingService
                 'name' => $ownerName,
                 'email' => $email,
                 'password' => $password,
-                'email_verified_at' => now(),
             ]);
+
+            // email_verified_at is deliberately not mass-assignable; a
+            // self-registered owner is auto-verified, so it's set explicitly.
+            $owner->forceFill(['email_verified_at' => now()])->save();
 
             $tenant->memberships()->create([
                 'user_id' => $owner->id,

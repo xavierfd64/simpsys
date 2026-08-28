@@ -35,6 +35,8 @@ class TenantOnboardingTest extends TestCase
         $this->assertNotNull($subscription);
         $this->assertSame(SubscriptionStatus::Trial, $subscription->status);
         $this->assertSame($plan->id, $subscription->subscription_plan_id);
+
+        $this->assertNotNull($tenant->owner()->user->email_verified_at);
     }
 
     public function test_duplicate_business_names_get_unique_slugs(): void
