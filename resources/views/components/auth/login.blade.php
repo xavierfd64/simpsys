@@ -63,7 +63,7 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
         }
 
         if ($user->activeMembership()) {
-            $this->redirectRoute('app.dashboard', navigate: true);
+            $this->redirectRoute($user->homeRouteName(), navigate: true);
 
             return;
         }

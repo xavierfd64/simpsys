@@ -67,7 +67,9 @@ class FoundationSmokeTest extends TestCase
         $cashier = User::factory()->create();
         $tenant->memberships()->create(['user_id' => $cashier->id, 'role' => TenantMembershipRole::Cashier]);
 
-        $this->actingAs($cashier)->get('/app/dashboard')->assertOk();
+        // The dashboard itself is owner-only; POS is the cashier's home area.
+        $this->actingAs($cashier)->get('/app/pos')->assertOk();
+        $this->actingAs($cashier)->get('/app/dashboard')->assertForbidden();
     }
 
     public function test_deactivated_membership_blocks_tenant_access(): void

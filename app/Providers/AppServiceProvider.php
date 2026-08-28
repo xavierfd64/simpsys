@@ -41,15 +41,7 @@ class AppServiceProvider extends ServiceProvider
         RedirectIfAuthenticated::redirectUsing(function (Request $request) {
             $user = $request->user();
 
-            if ($user?->is_platform_admin) {
-                return route('admin.dashboard');
-            }
-
-            if ($user?->activeMembership()) {
-                return route('app.dashboard');
-            }
-
-            return route('home');
+            return $user ? route($user->homeRouteName()) : route('home');
         });
     }
 }

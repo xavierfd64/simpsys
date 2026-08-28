@@ -140,7 +140,14 @@ Tracking the master instruction's Development Order (section 35):
 - [x] **Stage 8 — Expenses**: expense categories, expenses (amount/date/
       category/payment method/receipt image/notes), date-range filtered
       history with a running total, owner-only.
-- [ ] Stage 9 — Dashboard and Reports
+- [x] **Stage 9 — Dashboard and Reports**: real dashboard (today's sales/
+      transactions/expenses/net income, 7-day trend, low stock alerts, recent
+      transactions), Reports page (Sales/Products/Inventory/Supplies/Expenses
+      tabs, date-range filters, payment/category breakdowns). Both owner-only.
+      Made login/register redirect role-aware (`User::homeRouteName()`):
+      owner → dashboard, cashier → POS, kitchen staff → kitchen board, since
+      the dashboard itself is now owner-only rather than open to any tenant
+      member.
 - [ ] Stage 10 — Users and Settings
 - [ ] Stage 11 — SaaS and Super Admin
 - [ ] Stage 12 — QA and Security

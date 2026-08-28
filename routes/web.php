@@ -23,8 +23,6 @@ Route::post('/logout', function (Request $request) {
 })->middleware('auth')->name('logout');
 
 Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(function () {
-    Route::livewire('/dashboard', 'pages::tenant.dashboard')->name('dashboard');
-
     Route::middleware('role:owner,cashier')->group(function () {
         Route::livewire('/pos', 'pages::tenant.pos.index')->name('pos');
         Route::livewire('/sales', 'pages::tenant.sales.index')->name('sales.index');
@@ -36,6 +34,8 @@ Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(functi
     });
 
     Route::middleware('role:owner')->group(function () {
+        Route::livewire('/dashboard', 'pages::tenant.dashboard')->name('dashboard');
+        Route::livewire('/reports', 'pages::tenant.reports.index')->name('reports');
         Route::livewire('/settings', 'pages::tenant.settings')->name('settings');
 
         Route::livewire('/products', 'pages::tenant.products.index')->name('products.index');

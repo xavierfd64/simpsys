@@ -28,6 +28,32 @@ class LoginComponentTest extends TestCase
         $this->assertAuthenticatedAs($user);
     }
 
+    public function test_cashier_is_redirected_straight_to_pos_on_successful_login(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $user = User::factory()->create(['password' => 'correct-password']);
+        $tenant->memberships()->create(['user_id' => $user->id, 'role' => TenantMembershipRole::Cashier]);
+
+        Livewire::test('auth.login')
+            ->set('email', $user->email)
+            ->set('password', 'correct-password')
+            ->call('login')
+            ->assertRedirect(route('app.pos'));
+    }
+
+    public function test_kitchen_staff_is_redirected_straight_to_the_kitchen_board_on_successful_login(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $user = User::factory()->create(['password' => 'correct-password']);
+        $tenant->memberships()->create(['user_id' => $user->id, 'role' => TenantMembershipRole::KitchenStaff]);
+
+        Livewire::test('auth.login')
+            ->set('email', $user->email)
+            ->set('password', 'correct-password')
+            ->call('login')
+            ->assertRedirect(route('app.kitchen'));
+    }
+
     public function test_platform_admin_is_redirected_to_the_admin_dashboard_on_successful_login(): void
     {
         $admin = User::factory()->create(['password' => 'correct-password', 'is_platform_admin' => true]);
