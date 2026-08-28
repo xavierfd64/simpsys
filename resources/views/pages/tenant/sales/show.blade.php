@@ -31,6 +31,11 @@ new #[Layout('layouts.app')] #[Title('Sale Details')] class extends Component
         $this->sale = $sale;
     }
 
+    public function getTenantProperty()
+    {
+        return app(TenantContext::class)->tenant();
+    }
+
     public function voidSale(VoidSaleService $voidService): void
     {
         if (! app(TenantContext::class)->hasRole(TenantMembershipRole::Owner)) {
@@ -96,7 +101,7 @@ new #[Layout('layouts.app')] #[Title('Sale Details')] class extends Component
 
             @if ($sale->status->value === 'voided')
                 <div class="mt-4 rounded-lg bg-red-50 p-4 text-sm text-danger-500">
-                    <p class="font-medium">Voided by {{ $sale->voidedBy?->name }} on {{ $sale->voided_at?->timezone($sale->tenant->timezone)->format('M j, Y g:i A') }}</p>
+                    <p class="font-medium">Voided by {{ $sale->voidedBy?->name }} on {{ $sale->voided_at?->timezone($this->tenant->timezone)->format('M j, Y g:i A') }}</p>
                     <p class="mt-1">Reason: {{ $sale->void_reason }}</p>
                 </div>
             @endif
@@ -105,7 +110,7 @@ new #[Layout('layouts.app')] #[Title('Sale Details')] class extends Component
         <div class="space-y-4">
             <div class="rounded-xl border border-hairline bg-surface p-6">
                 <dl class="space-y-2 text-sm">
-                    <div class="flex justify-between"><dt class="text-muted">Date</dt><dd class="text-ink">{{ $sale->created_at->timezone($sale->tenant->timezone)->format('M j, Y g:i A') }}</dd></div>
+                    <div class="flex justify-between"><dt class="text-muted">Date</dt><dd class="text-ink">{{ $sale->created_at->timezone($this->tenant->timezone)->format('M j, Y g:i A') }}</dd></div>
                     <div class="flex justify-between"><dt class="text-muted">Cashier</dt><dd class="text-ink">{{ $sale->cashier?->name }}</dd></div>
                     <div class="flex justify-between"><dt class="text-muted">Order Type</dt><dd class="text-ink">{{ $sale->order_type?->label() ?? '—' }}</dd></div>
                     <div class="flex justify-between"><dt class="text-muted">Payment Method</dt><dd class="text-ink">{{ $sale->payment_method_name }}</dd></div>

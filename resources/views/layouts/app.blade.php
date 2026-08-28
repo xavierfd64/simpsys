@@ -18,7 +18,21 @@
         ['route' => 'app.settings', 'match' => 'app.settings*', 'label' => 'Settings', 'icon' => 'settings', 'roles' => [Role::Owner]],
     ];
 
-    $visibleNavItems = array_filter($navItems, fn ($item) => in_array($role, $item['roles'], true) && Route::has($item['route']));
+    $kitchenEnabled = $tenant?->settings?->kitchen_enabled ?? true;
+
+    $visibleNavItems = array_filter($navItems, function ($item) use ($role, $kitchenEnabled) {
+        if (! in_array($role, $item['roles'], true) || ! Route::has($item['route'])) {
+            return false;
+        }
+
+        // Kitchen staff always need their one screen regardless of the
+        // setting; the toggle only declutters the owner's own sidebar.
+        if ($item['route'] === 'app.kitchen' && ! $kitchenEnabled && $role !== Role::KitchenStaff) {
+            return false;
+        }
+
+        return true;
+    });
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">

@@ -110,7 +110,7 @@ new #[Layout('layouts.app')] #[Title('Expenses')] class extends Component
             'payment_method_id' => ['nullable', 'exists:payment_methods,id'],
             'description' => ['nullable', 'string', 'max:255'],
             'notes' => ['nullable', 'string', 'max:1000'],
-            'receipt' => ['nullable', 'image', 'max:5120'],
+            'receipt' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
         $tenant = app(TenantContext::class)->tenant();

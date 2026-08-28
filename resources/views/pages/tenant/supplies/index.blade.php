@@ -114,7 +114,7 @@ new #[Layout('layouts.app')] #[Title('Supplies')] class extends Component
             'supply_category_id' => ['nullable', 'exists:supply_categories,id'],
             'unit' => ['required', 'string', 'max:50'],
             'low_stock_threshold' => ['required', 'numeric', 'min:0'],
-            'image' => ['nullable', 'image', 'max:5120'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
         $tenant = app(TenantContext::class)->tenant();

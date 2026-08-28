@@ -3,7 +3,9 @@
 use App\Models\SubscriptionPlan;
 use App\Services\TenantOnboardingService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -42,6 +44,18 @@ new #[Layout('layouts.guest')] #[Title('Create Your Account')] class extends Com
 
     public function register(TenantOnboardingService $onboarding): void
     {
+        $throttleKey = 'register|'.request()->ip();
+
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+
+            throw ValidationException::withMessages([
+                'email' => "Too many attempts. Please try again in {$seconds} seconds.",
+            ]);
+        }
+
+        RateLimiter::hit($throttleKey, 3600);
+
         $this->validate([
             'business_name' => ['required', 'string', 'max:255'],
             'owner_name' => ['required', 'string', 'max:255'],

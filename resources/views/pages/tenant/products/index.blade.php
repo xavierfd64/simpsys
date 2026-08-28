@@ -99,7 +99,7 @@ new #[Layout('layouts.app')] #[Title('Products')] class extends Component
             'type' => ['required', 'in:ready_to_sell,made_to_order'],
             'selling_price' => ['required', 'numeric', 'min:0'],
             'low_stock_threshold' => ['required', 'integer', 'min:0'],
-            'image' => ['nullable', 'image', 'max:5120'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
 
         $tenant = app(TenantContext::class)->tenant();

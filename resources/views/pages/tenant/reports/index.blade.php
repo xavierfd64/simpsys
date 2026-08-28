@@ -30,9 +30,10 @@ new #[Layout('layouts.app')] #[Title('Reports')] class extends Component
 
     protected function salesInRange()
     {
-        return Sale::query()
-            ->whereDate('created_at', '>=', $this->dateFrom)
-            ->whereDate('created_at', '<=', $this->dateTo);
+        $tenant = app(TenantContext::class)->tenant();
+        [$start, $end] = $tenant->localRangeBoundsUtc($this->dateFrom, $this->dateTo);
+
+        return Sale::query()->whereBetween('created_at', [$start, $end]);
     }
 
     public function getSalesSummaryProperty(): array

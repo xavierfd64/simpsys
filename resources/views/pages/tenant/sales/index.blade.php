@@ -30,19 +30,27 @@ new #[Layout('layouts.app')] #[Title('Sales')] class extends Component
         $this->resetPage();
     }
 
+    public function getTenantProperty()
+    {
+        return app(TenantContext::class)->tenant();
+    }
+
     public function getSalesProperty()
     {
         $tenant = app(TenantContext::class)->tenant();
         $isOwner = app(TenantContext::class)->hasRole(\App\Enums\TenantMembershipRole::Owner);
 
-        return Sale::query()
+        $query = Sale::query()
             ->with('cashier')
             ->when(! $isOwner, fn ($q) => $q->where('cashier_id', auth()->id()))
-            ->when($this->status, fn ($q) => $q->where('status', $this->status))
-            ->when($this->dateFrom, fn ($q) => $q->whereDate('created_at', '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->whereDate('created_at', '<=', $this->dateTo))
-            ->latest('id')
-            ->paginate(15);
+            ->when($this->status, fn ($q) => $q->where('status', $this->status));
+
+        if ($this->dateFrom && $this->dateTo) {
+            [$start, $end] = $tenant->localRangeBoundsUtc($this->dateFrom, $this->dateTo);
+            $query->whereBetween('created_at', [$start, $end]);
+        }
+
+        return $query->latest('id')->paginate(15);
     }
 }; ?>
 
@@ -88,7 +96,7 @@ new #[Layout('layouts.app')] #[Title('Sales')] class extends Component
                 @forelse ($this->sales as $sale)
                     <tr class="cursor-pointer hover:bg-app-bg" onclick="window.location='{{ route('app.sales.show', $sale) }}'">
                         <td class="px-4 py-3 font-medium text-ink">{{ $sale->displayNumber() }}</td>
-                        <td class="px-4 py-3 text-muted">{{ $sale->created_at->timezone($sale->tenant->timezone)->format('M j, Y g:i A') }}</td>
+                        <td class="px-4 py-3 text-muted">{{ $sale->created_at->timezone($this->tenant->timezone)->format('M j, Y g:i A') }}</td>
                         <td class="px-4 py-3 text-muted">{{ $sale->cashier?->name }}</td>
                         <td class="px-4 py-3 text-muted">{{ $sale->order_type?->label() ?? '—' }}</td>
                         <td class="px-4 py-3 text-muted">{{ $sale->payment_method_name }}</td>

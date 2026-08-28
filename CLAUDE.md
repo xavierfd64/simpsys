@@ -98,6 +98,17 @@ shared-hosting-appropriate.
   itself does with the parameter. Fix: name the property something else
   (e.g. `$business`) so it can't collide. See
   `resources/views/pages/admin/businesses/show.blade.php`.
+- **Never `whereDate()` a timestamp column against a tenant-local date
+  string.** Timestamps (`sales.created_at`, etc.) are stored in UTC;
+  `whereDate('created_at', $tenantLocalToday)` compares the *raw UTC* date
+  against a *tenant-timezone* date string — wrong for any tenant not in UTC,
+  for whichever part of the day local time and UTC land on different
+  calendar dates (discovered via a genuinely flaky-looking dashboard test).
+  Use `Tenant::localDayBoundsUtc($date)` / `localRangeBoundsUtc($from, $to)`
+  (`app/Models/Tenant.php`) to get UTC bounds, then `whereBetween()`. Plain
+  `date` columns the user enters directly (`expenses.expense_date`) don't
+  have this problem — only timestamp columns being compared against a
+  timezone-converted date do.
 - **Money columns** (`products.selling_price`, sale/expense amounts, etc.) are
   stored as integer centavos — use `App\Support\Money::format()`/`toCents()`.
   Subscription plan prices are a deliberate exception: whole-peso integers,
@@ -176,7 +187,21 @@ Tracking the master instruction's Development Order (section 35):
       active subscription). Platform Settings (spec module 9) was not built
       — no concrete platform-wide config need has come up yet; revisit if
       Stage 13's installer surfaces one.
-- [ ] Stage 12 — QA and Security
+- [x] **Stage 12 — QA and Security**: systematic review pass rather than new
+      features. Found and fixed: (1) a real timezone bug — see
+      `Tenant::localDayBoundsUtc()` note above — affecting dashboard/reports/
+      sales-history date filtering; (2) an N+1 in the sales list
+      (`$sale->tenant->timezone` per row); (3) tightened image upload
+      validation to explicit `mimes:jpg,jpeg,png,webp` instead of Livewire's
+      generic `image` rule (which also accepts SVG — a known XSS vector via
+      inline `<script>`); (4) added rate limiting to registration (login
+      already had it); (5) wired `kitchen_enabled` to actually hide the
+      Kitchen nav item for owners (kitchen staff always keep it, it's their
+      only screen). Verified: no unescaped `{!!` Blade output anywhere, all
+      `selectRaw()` calls use fixed literal SQL (no interpolated user input),
+      tenant-scoping coverage across every tenant-owned model, and that wide
+      tables scroll within their own container rather than the page (checked
+      `document.body.scrollWidth` against viewport on a real mobile size).
 - [ ] Stage 13 — Z.com Deployment (WordPress-style installer)
 
 ## Demo accounts (seeded, password `password`)

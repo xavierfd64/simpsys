@@ -32,7 +32,7 @@ class DashboardTest extends TestCase
         app(ProductInventoryService::class)->adjust($product, 10, ProductInventoryMovementType::StockAdded);
 
         app(SaleService::class)->recordSale($tenant, $cashier, [['product_id' => $product->id, 'quantity' => 1]], OrderType::ToGo, $paymentMethod, 10000);
-        Expense::factory()->for($tenant)->create(['amount' => 3000, 'expense_date' => now()->toDateString()]);
+        Expense::factory()->for($tenant)->create(['amount' => 3000, 'expense_date' => now($tenant->timezone)->toDateString()]);
 
         $this->actingAs($owner);
         app(TenantContext::class)->setMembership($membership);
@@ -55,6 +55,34 @@ class DashboardTest extends TestCase
         app(TenantContext::class)->setMembership($membership);
 
         Livewire::test('pages::tenant.dashboard')->assertSee('Siomai');
+    }
+
+    public function test_todays_sales_use_tenant_local_calendar_day_not_utc(): void
+    {
+        // 8:00 PM UTC on Jan 1 is already 4:00 AM Jan 2 in Asia/Manila
+        // (UTC+8) — a naive whereDate('created_at', ...) against the raw
+        // UTC-stored timestamp would bucket this sale under Jan 1 and miss
+        // it entirely when the tenant asks for "today" (Jan 2, their time).
+        \Illuminate\Support\Carbon::setTestNow('2026-01-01 20:00:00');
+
+        $tenant = Tenant::factory()->create(['timezone' => 'Asia/Manila']);
+        $cashier = User::factory()->create();
+        $owner = User::factory()->create();
+        $membership = $tenant->memberships()->create(['user_id' => $owner->id, 'role' => TenantMembershipRole::Owner]);
+        $paymentMethod = PaymentMethod::factory()->for($tenant)->create();
+        $product = Product::factory()->for($tenant)->create(['selling_price' => 5000]);
+        app(ProductInventoryService::class)->adjust($product, 10, ProductInventoryMovementType::StockAdded);
+
+        app(SaleService::class)->recordSale($tenant, $cashier, [['product_id' => $product->id, 'quantity' => 1]], OrderType::ToGo, $paymentMethod, 5000);
+
+        $this->actingAs($owner);
+        app(TenantContext::class)->setMembership($membership);
+
+        Livewire::test('pages::tenant.dashboard')
+            ->assertSee('Jan 2, 2026')
+            ->assertSee('₱50.00');
+
+        \Illuminate\Support\Carbon::setTestNow();
     }
 
     public function test_only_owner_can_access_the_dashboard(): void

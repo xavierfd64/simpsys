@@ -3,6 +3,7 @@
 use App\Enums\ProductInventoryMovementType;
 use App\Models\Product;
 use App\Services\ProductInventoryService;
+use App\Services\TenantContext;
 use App\Support\Money;
 use App\Support\TenantStorage;
 use Illuminate\Support\Facades\Auth;
@@ -40,6 +41,11 @@ new #[Layout('layouts.app')] #[Title('Product Details')] class extends Component
     public function getMovementsProperty()
     {
         return $this->product->movements()->with('user')->latest('id')->paginate(15);
+    }
+
+    public function getTenantProperty()
+    {
+        return app(TenantContext::class)->tenant();
     }
 
     public function adjustStock(ProductInventoryService $inventory): void
@@ -195,7 +201,7 @@ new #[Layout('layouts.app')] #[Title('Product Details')] class extends Component
                 <tbody class="divide-y divide-hairline">
                     @forelse ($this->movements as $movement)
                         <tr>
-                            <td class="px-4 py-3 text-muted">{{ $movement->created_at->timezone($product->tenant->timezone)->format('M j, Y g:i A') }}</td>
+                            <td class="px-4 py-3 text-muted">{{ $movement->created_at->timezone($this->tenant->timezone)->format('M j, Y g:i A') }}</td>
                             <td class="px-4 py-3 text-ink">{{ $movement->type->label() }}</td>
                             <td class="px-4 py-3 {{ $movement->quantity_change < 0 ? 'text-danger-500' : 'text-green-600' }}">
                                 {{ $movement->quantity_change > 0 ? '+' : '' }}{{ $movement->quantity_change }}

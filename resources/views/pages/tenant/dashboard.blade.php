@@ -36,17 +36,21 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 
     public function getTodaysSalesProperty(): int
     {
+        [$start, $end] = $this->tenant->localDayBoundsUtc($this->today->toDateString());
+
         return Sale::query()
             ->where('status', SaleStatus::Completed)
-            ->whereDate('created_at', $this->today->toDateString())
+            ->whereBetween('created_at', [$start, $end])
             ->sum('total');
     }
 
     public function getTodaysTransactionsProperty(): int
     {
+        [$start, $end] = $this->tenant->localDayBoundsUtc($this->today->toDateString());
+
         return Sale::query()
             ->where('status', SaleStatus::Completed)
-            ->whereDate('created_at', $this->today->toDateString())
+            ->whereBetween('created_at', [$start, $end])
             ->count();
     }
 
@@ -91,9 +95,11 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         $days = collect(range(6, 0))->map(fn ($i) => $this->today->copy()->subDays($i));
 
         return $days->map(function ($day) {
+            [$start, $end] = $this->tenant->localDayBoundsUtc($day->toDateString());
+
             $total = Sale::query()
                 ->where('status', SaleStatus::Completed)
-                ->whereDate('created_at', $day->toDateString())
+                ->whereBetween('created_at', [$start, $end])
                 ->sum('total');
 
             return ['label' => $day->format('D'), 'total' => $total];
