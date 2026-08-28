@@ -2,8 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Enums\BillingPeriod;
+use App\Enums\SubscriptionStatus;
 use App\Enums\TenantMembershipRole;
 use App\Enums\TenantStatus;
+use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -15,6 +18,8 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        $this->call(SubscriptionPlanSeeder::class);
+
         User::query()->firstOrCreate(
             ['email' => 'admin@bizmanager.test'],
             [
@@ -74,6 +79,30 @@ class DatabaseSeeder extends Seeder
         $tenant->memberships()->firstOrCreate(
             ['user_id' => $kitchenStaff->id],
             ['role' => TenantMembershipRole::KitchenStaff]
+        );
+
+        $tenant->settings()->firstOrCreate([]);
+
+        $tenant->paymentMethods()->firstOrCreate(
+            ['name' => 'Cash'],
+            ['is_enabled' => true, 'sort_order' => 0]
+        );
+        $tenant->paymentMethods()->firstOrCreate(
+            ['name' => 'GCash'],
+            ['is_enabled' => true, 'sort_order' => 1]
+        );
+
+        $businessPlan = SubscriptionPlan::query()->where('slug', 'business')->first();
+
+        $tenant->subscriptions()->firstOrCreate(
+            ['tenant_id' => $tenant->id],
+            [
+                'subscription_plan_id' => $businessPlan->id,
+                'billing_period' => BillingPeriod::Monthly,
+                'status' => SubscriptionStatus::Active,
+                'current_period_start' => now()->startOfMonth(),
+                'current_period_end' => now()->endOfMonth(),
+            ]
         );
     }
 }

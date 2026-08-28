@@ -33,7 +33,7 @@ class AppServiceProvider extends ServiceProvider
                 return route('app.dashboard');
             }
 
-            return route('login');
+            return route('home');
         });
     }
 }

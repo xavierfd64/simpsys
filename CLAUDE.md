@@ -72,8 +72,11 @@ Tracking the master instruction's Development Order (section 35):
       role/platform-admin middleware, shared Tailwind design tokens, guest/app/admin
       layouts (desktop sidebar + mobile drawer/bottom nav), Lucide icons, seeded
       demo accounts (`database/seeders/DatabaseSeeder.php`).
-- [ ] Stage 2 — Tenant Setup (registration/onboarding, business settings shell,
-      subscription plan tables)
+- [x] **Stage 2 — Tenant Setup**: public landing/pricing pages, registration →
+      `TenantOnboardingService` (tenant + owner + membership + trial subscription +
+      default settings/payment method in one transaction), `subscription_plans`,
+      `subscriptions`, `tenant_settings`, `payment_methods` tables, owner-only
+      business settings shell (name/timezone).
 - [ ] Stage 3 — Products
 - [ ] Stage 4 — Supplies
 - [ ] Stage 5 — POS
