@@ -6,12 +6,14 @@ use App\Enums\BillingPeriod;
 use App\Enums\ProductInventoryMovementType;
 use App\Enums\ProductType;
 use App\Enums\SubscriptionStatus;
+use App\Enums\SupplyInventoryMovementType;
 use App\Enums\TenantMembershipRole;
 use App\Enums\TenantStatus;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ProductInventoryService;
+use App\Services\SupplyInventoryService;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -84,7 +86,13 @@ class DatabaseSeeder extends Seeder
             ['role' => TenantMembershipRole::KitchenStaff]
         );
 
-        $tenant->settings()->firstOrCreate([]);
+        $tenant->settings()->firstOrCreate([], [
+            'order_types_enabled' => true,
+            'dine_in_enabled' => true,
+            'to_go_enabled' => true,
+            'default_order_type' => 'to_go',
+            'kitchen_enabled' => true,
+        ]);
 
         $tenant->paymentMethods()->firstOrCreate(
             ['name' => 'Cash'],
@@ -143,7 +151,7 @@ class DatabaseSeeder extends Seeder
             ['name' => 'Plastic Cups', 'unit' => 'pieces', 'threshold' => 50, 'stock' => 15],
         ];
 
-        $supplyInventoryService = app(\App\Services\SupplyInventoryService::class);
+        $supplyInventoryService = app(SupplyInventoryService::class);
 
         foreach ($suppliesData as $data) {
             $supply = $tenant->supplies()->firstOrCreate(
@@ -157,7 +165,7 @@ class DatabaseSeeder extends Seeder
             );
 
             if ($supply->currentStock() === 0.0 && $data['stock'] > 0) {
-                $supplyInventoryService->adjust($supply, $data['stock'], \App\Enums\SupplyInventoryMovementType::StockAdded, 'Initial stock');
+                $supplyInventoryService->adjust($supply, $data['stock'], SupplyInventoryMovementType::StockAdded, 'Initial stock');
             }
         }
     }

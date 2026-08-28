@@ -25,6 +25,10 @@ Route::post('/logout', function (Request $request) {
 Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(function () {
     Route::livewire('/dashboard', 'pages::tenant.dashboard')->name('dashboard');
 
+    Route::middleware('role:owner,cashier')->group(function () {
+        Route::livewire('/pos', 'pages::tenant.pos.index')->name('pos');
+    });
+
     Route::middleware('role:owner')->group(function () {
         Route::livewire('/settings', 'pages::tenant.settings')->name('settings');
 

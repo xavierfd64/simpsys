@@ -75,6 +75,20 @@ shared-hosting-appropriate.
   `Product::findOrFail($product->id)`) rather than trust the bound instance,
   or a crafted URL can load another tenant's record. See
   `resources/views/pages/tenant/products/show.blade.php` for the pattern.
+- **Livewire action calls need `Livewire::addPersistentMiddleware()`.** A
+  full-page Livewire component's initial GET goes through the route's real
+  middleware, but every subsequent `wire:click`/`wire:submit` hits Livewire's
+  own `/livewire/update` endpoint, which only replays a hardcoded allowlist of
+  framework middleware (auth, `SubstituteBindings`, ...) — custom middleware
+  like `tenant`/`role`/`platform.admin` is skipped by default, so
+  `TenantContext` is empty on every action call unless registered via
+  `Livewire::addPersistentMiddleware([...])` in `AppServiceProvider::boot()`
+  (already done). **`Livewire::test()` in PHPUnit bypasses this code path
+  entirely** (Livewire's own source explicitly skips middleware replay for
+  "fake requests such as a test"), so a passing component test proves nothing
+  about this — any component action touching `TenantContext` must also be
+  checked against a real running server (`php artisan serve` + a real HTTP
+  client or Playwright), not just `php artisan test`.
 - **Money columns** (`products.selling_price`, sale/expense amounts, etc.) are
   stored as integer centavos — use `App\Support\Money::format()`/`toCents()`.
   Subscription plan prices are a deliberate exception: whole-peso integers,
@@ -104,7 +118,15 @@ Tracking the master instruction's Development Order (section 35):
       stock), `SupplyInventoryService` (same locked/transactional/non-negative
       pattern as products, decimal quantities), CRUD + adjust + history UI.
       Manual deduction only — no recipe/BOM auto-deduction, per spec V1 scope.
-- [ ] Stage 5 — POS
+- [x] **Stage 5 — POS**: sales/sale_items/kitchen_orders/kitchen_order_items
+      tables, `SaleService` (one DB transaction: sale + line items + inventory
+      deduction for ready-to-sell + one kitchen order for made-to-order items,
+      full rollback on insufficient stock/payment), POS UI (search, category
+      filter, cart with qty controls, DINE-IN/TO-GO tabs, checkout modal,
+      mobile bottom-sheet cart). **Found and fixed a critical bug here — see
+      the `Livewire::addPersistentMiddleware()` note above** — this also
+      means Stage 3/4 save flows were silently broken until this fix and have
+      since been re-verified working.
 - [ ] Stage 6 — Sales
 - [ ] Stage 7 — Kitchen
 - [ ] Stage 8 — Expenses
