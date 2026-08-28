@@ -21,13 +21,18 @@ enum TenantStatus: string
         };
     }
 
-    public function badgeColor(): string
+    /**
+     * Full literal Tailwind class strings — Tailwind's build-time scanner
+     * only picks up classes it can see spelled out in source, so these
+     * cannot be assembled via string interpolation (e.g. "bg-{$color}-50").
+     */
+    public function badgeClasses(): string
     {
         return match ($this) {
-            self::Trial => 'blue',
-            self::Active => 'green',
-            self::Expired => 'amber',
-            self::Suspended, self::Cancelled => 'red',
+            self::Trial => 'bg-blue-50 text-blue-700',
+            self::Active => 'bg-green-50 text-green-700',
+            self::Expired => 'bg-amber-50 text-amber-700',
+            self::Suspended, self::Cancelled => 'bg-red-50 text-red-700',
         };
     }
 }

@@ -1,14 +1,12 @@
 @php
     $adminNavItems = [
-        ['route' => 'admin.dashboard', 'label' => 'Dashboard', 'icon' => 'layout-dashboard'],
-        ['route' => 'admin.businesses', 'label' => 'Businesses', 'icon' => 'building-2'],
-        ['route' => 'admin.plans', 'label' => 'Plans', 'icon' => 'tag'],
-        ['route' => 'admin.subscriptions', 'label' => 'Subscriptions', 'icon' => 'credit-card'],
-        ['route' => 'admin.billing', 'label' => 'Billing', 'icon' => 'receipt'],
-        ['route' => 'admin.promotions', 'label' => 'Promotions', 'icon' => 'percent'],
-        ['route' => 'admin.notifications', 'label' => 'Notifications', 'icon' => 'bell'],
-        ['route' => 'admin.settings', 'label' => 'Settings', 'icon' => 'settings'],
+        ['route' => 'admin.dashboard', 'match' => 'admin.dashboard', 'label' => 'Dashboard', 'icon' => 'layout-dashboard'],
+        ['route' => 'admin.businesses.index', 'match' => 'admin.businesses.*', 'label' => 'Businesses', 'icon' => 'building-2'],
+        ['route' => 'admin.plans.index', 'match' => 'admin.plans.*', 'label' => 'Plans', 'icon' => 'tag'],
+        ['route' => 'admin.promotions.index', 'match' => 'admin.promotions.*', 'label' => 'Promotions', 'icon' => 'percent'],
+        ['route' => 'admin.notifications.index', 'match' => 'admin.notifications.*', 'label' => 'Notifications', 'icon' => 'bell'],
     ];
+    $adminNavItems = array_filter($adminNavItems, fn ($item) => Route::has($item['route']));
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
@@ -32,7 +30,7 @@
 
             <nav class="flex-1 space-y-1 overflow-y-auto px-3 py-4">
                 @foreach ($adminNavItems as $item)
-                    @php $isActive = Route::has($item['route']) && request()->routeIs($item['route'].'*'); @endphp
+                    @php $isActive = request()->routeIs($item['match']); @endphp
                     <a href="{{ Route::has($item['route']) ? route($item['route']) : '#' }}"
                        class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition
                               {{ $isActive ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white' }}">

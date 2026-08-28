@@ -45,7 +45,7 @@ class User extends Authenticatable
         return $this->memberships()
             ->with('tenant')
             ->where('status', 'active')
-            ->whereHas('tenant', fn ($query) => $query->whereNotIn('status', ['cancelled']))
+            ->whereHas('tenant', fn ($query) => $query->whereNotIn('status', ['cancelled', 'suspended']))
             ->first();
     }
 

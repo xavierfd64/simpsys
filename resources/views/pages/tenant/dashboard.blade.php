@@ -2,6 +2,7 @@
 
 use App\Enums\SaleStatus;
 use App\Models\Expense;
+use App\Models\PlatformNotification;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\Supply;
@@ -17,6 +18,15 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
     public function getTenantProperty()
     {
         return app(TenantContext::class)->tenant();
+    }
+
+    public function getPlatformNoticeProperty()
+    {
+        return PlatformNotification::query()
+            ->forTenant($this->tenant)
+            ->where('created_at', '>=', now()->subDays(14))
+            ->latest('id')
+            ->first();
     }
 
     public function getTodayProperty(): \Carbon\CarbonInterface
@@ -96,6 +106,16 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         <h1 class="text-2xl font-semibold text-ink">Good {{ now($this->tenant->timezone)->hour < 12 ? 'morning' : 'day' }}, {{ Auth::user()->name }}</h1>
         <p class="mt-1 text-sm text-muted">Here's what's happening in your business today, {{ $this->today->format('M j, Y') }}.</p>
     </div>
+
+    @if ($this->platformNotice)
+        <div class="flex items-start gap-3 rounded-xl border border-primary-200 bg-primary-50 p-4">
+            <x-lucide-bell class="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
+            <div>
+                <p class="text-sm font-semibold text-primary-700">{{ $this->platformNotice->title }}</p>
+                <p class="mt-0.5 text-sm text-primary-700">{{ $this->platformNotice->message }}</p>
+            </div>
+        </div>
+    @endif
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-xl border border-hairline bg-surface p-5">

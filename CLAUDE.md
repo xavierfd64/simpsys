@@ -89,6 +89,15 @@ shared-hosting-appropriate.
   about this — any component action touching `TenantContext` must also be
   checked against a real running server (`php artisan serve` + a real HTTP
   client or Playwright), not just `php artisan test`.
+- **A public property can't share its name with a route/mount parameter of a
+  different type.** `Route::livewire('/businesses/{tenant}', ...)` plus
+  `public Tenant $tenant;` plus `mount(string $tenant)` crashes — Livewire
+  auto-assigns the raw route value onto any public property matching the
+  parameter's name, so a `Tenant`-typed property gets a raw uuid string
+  assigned to it and throws a TypeError, independent of what `mount()`
+  itself does with the parameter. Fix: name the property something else
+  (e.g. `$business`) so it can't collide. See
+  `resources/views/pages/admin/businesses/show.blade.php`.
 - **Money columns** (`products.selling_price`, sale/expense amounts, etc.) are
   stored as integer centavos — use `App\Support\Money::format()`/`toCents()`.
   Subscription plan prices are a deliberate exception: whole-peso integers,
@@ -153,7 +162,20 @@ Tracking the master instruction's Development Order (section 35):
       deactivate/reset password) with plan `user_limit` enforcement — an
       owner can't lock themselves out via deactivate, and can't exceed the
       subscription's seat count.
-- [ ] Stage 11 — SaaS and Super Admin
+- [x] **Stage 11 — SaaS and Super Admin**: billing_payments, promotions,
+      platform_notifications tables. Admin dashboard (platform counts, recent
+      registrations, plan distribution), Business Management (view/suspend/
+      reactivate/soft-delete — suspend now actually blocks login, a real gap
+      that existed before this stage), Business Detail (owner/members,
+      `SubscriptionService` actions: activate/extend/renew/expire/suspend/
+      cancel, change plan, record manual payment which renews the period),
+      Plans CRUD, Promotions CRUD, Notifications (compose + audience
+      targeting, shown as a banner on the matching tenants' dashboards).
+      Subscriptions/Billing were folded into the Business Detail page rather
+      than separate top-level admin screens (a tenant only ever has one
+      active subscription). Platform Settings (spec module 9) was not built
+      — no concrete platform-wide config need has come up yet; revisit if
+      Stage 13's installer surfaces one.
 - [ ] Stage 12 — QA and Security
 - [ ] Stage 13 — Z.com Deployment (WordPress-style installer)
 

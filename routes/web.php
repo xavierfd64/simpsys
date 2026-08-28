@@ -49,4 +49,11 @@ Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(functi
 
 Route::middleware(['auth', 'platform.admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::livewire('/dashboard', 'pages::admin.dashboard')->name('dashboard');
+
+    Route::livewire('/businesses', 'pages::admin.businesses.index')->name('businesses.index');
+    Route::livewire('/businesses/{tenant}', 'pages::admin.businesses.show')->name('businesses.show');
+
+    Route::livewire('/plans', 'pages::admin.plans.index')->name('plans.index');
+    Route::livewire('/promotions', 'pages::admin.promotions.index')->name('promotions.index');
+    Route::livewire('/notifications', 'pages::admin.notifications.index')->name('notifications.index');
 });

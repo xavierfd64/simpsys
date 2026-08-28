@@ -98,4 +98,9 @@ class Tenant extends Model
     {
         return $this->hasMany(Expense::class);
     }
+
+    public function billingPayments(): HasMany
+    {
+        return $this->hasMany(BillingPayment::class);
+    }
 }

@@ -21,13 +21,17 @@ enum SubscriptionStatus: string
         };
     }
 
-    public function badgeColor(): string
+    /**
+     * Full literal Tailwind class strings — see TenantStatus::badgeClasses()
+     * for why these can't be assembled via string interpolation.
+     */
+    public function badgeClasses(): string
     {
         return match ($this) {
-            self::Trial => 'blue',
-            self::Active => 'green',
-            self::Expired => 'amber',
-            self::Cancelled, self::Suspended => 'red',
+            self::Trial => 'bg-blue-50 text-blue-700',
+            self::Active => 'bg-green-50 text-green-700',
+            self::Expired => 'bg-amber-50 text-amber-700',
+            self::Cancelled, self::Suspended => 'bg-red-50 text-red-700',
         };
     }
 }

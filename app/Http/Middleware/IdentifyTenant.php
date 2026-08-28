@@ -26,6 +26,14 @@ class IdentifyTenant
         $membership = $user?->activeMembership();
 
         if (! $membership) {
+            $suspendedMembership = $user?->memberships()
+                ->whereHas('tenant', fn ($q) => $q->whereIn('status', ['suspended', 'cancelled']))
+                ->first();
+
+            if ($suspendedMembership) {
+                abort(403, 'This business account has been suspended. Please contact support.');
+            }
+
             abort(403, 'No active business was found for this account.');
         }
 
