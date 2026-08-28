@@ -5,20 +5,20 @@
     $role = app(\App\Services\TenantContext::class)->role();
 
     $navItems = [
-        ['route' => 'app.dashboard', 'label' => 'Dashboard', 'icon' => 'layout-dashboard', 'roles' => [Role::Owner]],
-        ['route' => 'app.pos', 'label' => 'POS', 'icon' => 'shopping-cart', 'roles' => [Role::Owner, Role::Cashier]],
-        ['route' => 'app.products', 'label' => 'Products', 'icon' => 'package', 'roles' => [Role::Owner]],
-        ['route' => 'app.inventory', 'label' => 'Inventory', 'icon' => 'clipboard-list', 'roles' => [Role::Owner]],
-        ['route' => 'app.supplies', 'label' => 'Supplies', 'icon' => 'tag', 'roles' => [Role::Owner]],
-        ['route' => 'app.kitchen', 'label' => 'Kitchen', 'icon' => 'chef-hat', 'roles' => [Role::Owner, Role::KitchenStaff]],
-        ['route' => 'app.sales', 'label' => 'Sales', 'icon' => 'receipt', 'roles' => [Role::Owner, Role::Cashier]],
-        ['route' => 'app.expenses', 'label' => 'Expenses', 'icon' => 'credit-card', 'roles' => [Role::Owner]],
-        ['route' => 'app.reports', 'label' => 'Reports', 'icon' => 'bar-chart', 'roles' => [Role::Owner]],
-        ['route' => 'app.users', 'label' => 'Users', 'icon' => 'users', 'roles' => [Role::Owner]],
-        ['route' => 'app.settings', 'label' => 'Settings', 'icon' => 'settings', 'roles' => [Role::Owner]],
+        ['route' => 'app.dashboard', 'match' => 'app.dashboard', 'label' => 'Dashboard', 'icon' => 'layout-dashboard', 'roles' => [Role::Owner]],
+        ['route' => 'app.pos', 'match' => 'app.pos', 'label' => 'POS', 'icon' => 'shopping-cart', 'roles' => [Role::Owner, Role::Cashier]],
+        ['route' => 'app.products.index', 'match' => 'app.products.*', 'label' => 'Products', 'icon' => 'package', 'roles' => [Role::Owner]],
+        ['route' => 'app.inventory.index', 'match' => 'app.inventory.*', 'label' => 'Inventory', 'icon' => 'clipboard-list', 'roles' => [Role::Owner]],
+        ['route' => 'app.supplies.index', 'match' => 'app.supplies.*', 'label' => 'Supplies', 'icon' => 'tag', 'roles' => [Role::Owner]],
+        ['route' => 'app.kitchen', 'match' => 'app.kitchen', 'label' => 'Kitchen', 'icon' => 'chef-hat', 'roles' => [Role::Owner, Role::KitchenStaff]],
+        ['route' => 'app.sales.index', 'match' => 'app.sales.*', 'label' => 'Sales', 'icon' => 'receipt', 'roles' => [Role::Owner, Role::Cashier]],
+        ['route' => 'app.expenses.index', 'match' => 'app.expenses.*', 'label' => 'Expenses', 'icon' => 'credit-card', 'roles' => [Role::Owner]],
+        ['route' => 'app.reports', 'match' => 'app.reports*', 'label' => 'Reports', 'icon' => 'bar-chart', 'roles' => [Role::Owner]],
+        ['route' => 'app.users.index', 'match' => 'app.users.*', 'label' => 'Users', 'icon' => 'users', 'roles' => [Role::Owner]],
+        ['route' => 'app.settings', 'match' => 'app.settings*', 'label' => 'Settings', 'icon' => 'settings', 'roles' => [Role::Owner]],
     ];
 
-    $visibleNavItems = array_filter($navItems, fn ($item) => in_array($role, $item['roles'], true));
+    $visibleNavItems = array_filter($navItems, fn ($item) => in_array($role, $item['roles'], true) && Route::has($item['route']));
 @endphp
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">

@@ -61,6 +61,24 @@ shared-hosting-appropriate.
 - Business services (e.g. future `SaleService`, `InventoryService`) must be
   reusable from both web/Livewire and the future `/api/v1` — no duplicated
   business logic between them.
+- **`BelongsToTenant` trait** (`app/Concerns/BelongsToTenant.php`) puts a global
+  `tenant_id` scope + auto-stamp-on-create on tenant-owned models (`Product`,
+  `ProductCategory`, `PaymentMethod`, and everything added the same way going
+  forward). Defense in depth on top of the `tenant` middleware, not a
+  replacement for it.
+- **Route-bound tenant models need re-fetching in `mount()`.** Implicit route
+  model binding runs in `SubstituteBindings`, part of the `web` middleware
+  group, which executes *before* the route's own `tenant` middleware — so
+  `BelongsToTenant`'s scope isn't active yet when the route parameter binds.
+  Any full-page Livewire component that takes a tenant-owned model as a route
+  parameter must re-fetch it inside `mount()` (e.g.
+  `Product::findOrFail($product->id)`) rather than trust the bound instance,
+  or a crafted URL can load another tenant's record. See
+  `resources/views/pages/tenant/products/show.blade.php` for the pattern.
+- **Money columns** (`products.selling_price`, sale/expense amounts, etc.) are
+  stored as integer centavos — use `App\Support\Money::format()`/`toCents()`.
+  Subscription plan prices are a deliberate exception: whole-peso integers,
+  since those are simple admin-set numbers with no centavo input.
 
 ## Stage progress
 
@@ -77,7 +95,11 @@ Tracking the master instruction's Development Order (section 35):
       default settings/payment method in one transaction), `subscription_plans`,
       `subscriptions`, `tenant_settings`, `payment_methods` tables, owner-only
       business settings shell (name/timezone).
-- [ ] Stage 3 — Products
+- [x] **Stage 3 — Products**: product categories, products (ready-to-sell /
+      made-to-order), `ProductInventoryService` (row-locked, transactional,
+      rejects negative stock) + full movement history, Products CRUD with
+      image upload, dedicated Inventory page for stock adjustments/low-stock
+      view, `BelongsToTenant` global-scope trait introduced here.
 - [ ] Stage 4 — Supplies
 - [ ] Stage 5 — POS
 - [ ] Stage 6 — Sales
@@ -104,6 +126,7 @@ npm install
 cp .env.example .env && php artisan key:generate
 touch database/database.sqlite
 php artisan migrate --seed
+php artisan storage:link
 npm run build   # or: npm run dev
 php artisan serve
 ```

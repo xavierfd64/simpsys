@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToTenant;
 use App\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['tenant_id', 'name', 'is_enabled', 'sort_order'])]
 class PaymentMethod extends Model
 {
-    use HasUuid;
+    use BelongsToTenant, HasUuid;
 
     protected function casts(): array
     {
