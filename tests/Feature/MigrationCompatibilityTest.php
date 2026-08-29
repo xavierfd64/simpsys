@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Illuminate\Database\Schema\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -37,5 +38,21 @@ class MigrationCompatibilityTest extends TestCase
             $tooLong->isEmpty(),
             "These identifiers exceed MySQL's 64-character limit: {$tooLong->join(', ')}"
         );
+    }
+
+    /**
+     * A plain `$table->string('email')->unique()` under utf8mb4 is a
+     * 255 * 4 = 1020-byte index — over both the classic 767-byte InnoDB
+     * single-column prefix limit (older row formats) and a target host's
+     * own reported 1000-byte cap, genuinely reproduced with a real
+     * restricted-row-format MariaDB server. AppServiceProvider::boot()
+     * lowers this to 191 chars (764 bytes) for every unlengthed string
+     * column app-wide — including in Laravel's own stock migrations
+     * (users.email, sessions.id, password_reset_tokens.email, ...), which
+     * is why this is set globally rather than patched migration-by-migration.
+     */
+    public function test_default_string_length_is_lowered_for_older_mysql_index_limits(): void
+    {
+        $this->assertSame(191, Builder::$defaultStringLength);
     }
 }

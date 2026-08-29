@@ -166,6 +166,31 @@ shared-hosting-appropriate.
   catches the length problem without needing a real MySQL connection in
   CI; confirmed it actually fails against the original migration by
   temporarily reverting the fix and re-running just that test.
+- **A plain `utf8mb4 VARCHAR(255)` unique/primary column can be un-indexable
+  on shared hosting, even though it's completely fine on a modern default
+  MySQL install.** `255 chars × 4 bytes/char (utf8mb4) = 1020 bytes` —
+  over the classic 767-byte InnoDB single-column index-prefix limit that
+  older/legacy `ROW_FORMAT=COMPACT` tables still enforce, and over a real
+  target host's own reported "max key length is 1000 bytes". This broke
+  `password_reset_tokens.email` (and would have broken `users.email`,
+  `sessions.id`, `jobs.id`/`uuid`, `cache`/`cache_locks.key`, and every
+  tenant-scoped `unique(['tenant_id', 'name'])` in this app's own
+  migrations next — all bare `$table->string(...)` with no explicit
+  length) the moment the installer's `migrate` ran against that host,
+  despite passing clean on this project's own default local MariaDB
+  (modern `ROW_FORMAT=DYNAMIC`, no such limit) every single time before.
+  Genuinely reproduced locally by forcing
+  `SET GLOBAL innodb_default_row_format = 'compact'` on a real MariaDB
+  server — confirmed the exact same failure class, then confirmed the fix
+  resolves it, including running the *installer wizard itself* end-to-end
+  under that condition, not just a raw `artisan migrate`. Fixed with
+  `Schema::defaultStringLength(191)` in `AppServiceProvider::boot()` —
+  Laravel's own standard, long-documented remedy for this exact class of
+  legacy-MySQL problem — rather than patching lengths migration-by-
+  migration, since several of the affected tables are Laravel's own stock
+  migrations this project never touched directly. `191 × 4 = 764` bytes,
+  under every limit encountered here. Added
+  `MigrationCompatibilityTest::test_default_string_length_is_lowered_for_older_mysql_index_limits`.
 - **A Livewire component action that fails mid-install must not surface as
   a bare 500.** `submitDatabase()`/`submitAdmin()` on the installer wizard
   now wrap their actual work in `try`/`catch (\Throwable)`: the connection
