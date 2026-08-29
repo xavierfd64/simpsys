@@ -127,6 +127,24 @@ shared-hosting-appropriate.
   `->forceFill([...])->save()` after the guarded `create()`. Also fixed a
   real latent instance of this: `TenantOnboardingService::register()` was
   silently failing to mark self-registered owners' `email_verified_at`.
+- **`composer.json`'s own `"php": "^8.3"` doesn't guarantee the resolved
+  dependency tree actually needs only 8.3.** Laravel framework's `composer.json`
+  allows either `^7.4.0` or `^8.0.0` for its Symfony components, and an
+  unconstrained `composer update` resolved to Symfony 8.1.x — which itself
+  requires PHP `>=8.4.1`, silently raising the *real*, Composer-enforced
+  floor (`vendor/composer/platform_check.php`) two full minor versions past
+  what `composer.json` claims. Found via a real "Composer detected issues
+  in your platform… require PHP ">= 8.4.1"" error when a deployment target
+  only had PHP 8.3.33. Fixed by explicitly requiring the Symfony components
+  at `^7.4` in `composer.json` (a version line Laravel 13 already supports
+  and that only needs PHP 8.2+) rather than lowering any stated
+  requirement — `composer.json`'s `"php"` constraint was already accurate;
+  the *lock file's resolved versions* weren't honoring it. Re-verify this
+  any time `composer update` (not `composer install`) touches Symfony
+  packages: `php -r '...'` over every `vendor/*/*/composer.json`'s
+  `require.php`, or just read the generated
+  `vendor/composer/platform_check.php`'s `PHP_VERSION_ID` check — that
+  file, not `composer.json`, is the actual enforced floor.
 - **A compatibility gate runs before Composer's autoloader is even
   required.** `bootstrap/preflight.php` (required from `public/index.php`
   before `vendor/autoload.php`) is deliberately zero-dependency plain PHP —

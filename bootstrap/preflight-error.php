@@ -55,7 +55,7 @@
     </p>
 
     <div class="card">
-        <?php foreach ($failed as $check): ?>
+        <?php foreach ($failed as $check) { ?>
         <div class="row fail">
             <span class="badge no">&times;</span>
             <div>
@@ -64,22 +64,25 @@
                 <div class="row-fix"><?= htmlspecialchars($check['fix']) ?></div>
             </div>
         </div>
-        <?php endforeach; ?>
+        <?php } ?>
     </div>
 
     <?php $passedCount = count($checks) - count($failed); ?>
-    <?php if ($passedCount > 0): ?>
+    <?php if ($passedCount > 0) { ?>
     <div class="card">
         <div class="ok-list">
-            <?php foreach ($checks as $check): if (! $check['passed']) continue; ?>
+            <?php foreach ($checks as $check) {
+                if (! $check['passed']) {
+                    continue;
+                } ?>
                 <div style="display:flex;align-items:center;gap:8px;padding:3px 0;">
                     <span class="badge ok" style="width:16px;height:16px;font-size:10px;">&check;</span>
                     <?= htmlspecialchars($check['label']) ?>
                 </div>
-            <?php endforeach; ?>
+            <?php } ?>
         </div>
     </div>
-    <?php endif; ?>
+    <?php } ?>
 
     <footer>HTTP 503 &middot; Service Unavailable until the requirements above are met.</footer>
 </div>
