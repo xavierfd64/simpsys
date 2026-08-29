@@ -2,9 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\RedirectIfNotInstalled;
 use App\Services\InstallerService;
 use App\Support\EnvEditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\File;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -16,8 +19,50 @@ class InstallerTest extends TestCase
     protected function tearDown(): void
     {
         File::delete(storage_path('app/installed.lock'));
+        $this->app['env'] = 'testing';
 
         parent::tearDown();
+    }
+
+    /**
+     * RedirectIfNotInstalled no-ops entirely in the testing environment (see
+     * its own docblock), so exercising its real branches means temporarily
+     * telling it we're not in testing — otherwise this exact regression
+     * (Livewire's own AJAX endpoint getting redirected to /install mid-wizard,
+     * which looks like the Continue button just reloading the page) would be
+     * invisible to the whole suite, the same blind spot documented in
+     * CLAUDE.md for the Stage 5 persistent-middleware bug.
+     */
+    public function test_livewire_ajax_requests_are_exempt_from_the_install_redirect(): void
+    {
+        File::delete(storage_path('app/installed.lock'));
+        $this->app['env'] = 'production';
+
+        $middleware = new RedirectIfNotInstalled;
+        $next = fn ($request) => new Response('handled');
+
+        $livewireRequest = Request::create('/livewire-anyhash123/update', 'POST');
+        $livewireRequest->headers->set('X-Livewire', 'true');
+        // Livewire::isLivewireRequest() reads the container-bound request()
+        // helper, not the $request parameter handed to the middleware — the
+        // real HTTP kernel binds them to the same instance before dispatch,
+        // so this mirrors that instead of testing a stale ambient request.
+        $this->app->instance('request', $livewireRequest);
+
+        $this->assertSame(
+            'handled',
+            $middleware->handle($livewireRequest, $next)->getContent(),
+            'A Livewire AJAX call must reach the app, not get redirected to /install.'
+        );
+
+        $ordinaryRequest = Request::create('/some-other-page', 'GET');
+        $this->app->instance('request', $ordinaryRequest);
+
+        $this->assertSame(
+            302,
+            $middleware->handle($ordinaryRequest, $next)->getStatusCode(),
+            'A normal page request must still redirect to /install when not installed.'
+        );
     }
 
     public function test_preflight_gate_runs_standalone_without_composer_or_laravel(): void

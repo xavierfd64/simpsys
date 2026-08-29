@@ -145,6 +145,42 @@ shared-hosting-appropriate.
   `require.php`, or just read the generated
   `vendor/composer/platform_check.php`'s `PHP_VERSION_ID` check — that
   file, not `composer.json`, is the actual enforced floor.
+- **A global route-gating middleware must explicitly exempt Livewire's own
+  AJAX endpoint, and by header, not by path.** `RedirectIfNotInstalled`
+  redirects every request to `/install` until `storage/app/installed.lock`
+  exists — but Livewire's update endpoint is registered directly on the
+  `web` middleware group (same as any other route in it) at a path Livewire
+  4 derives *per-installation* from `APP_KEY`
+  (`/livewire-{8-char-hash}/update`, via `EndpointResolver::prefix()`), not
+  the fixed `/livewire/update` a naive `$request->is('livewire/*')` check
+  would expect. Without an exemption at all, every `wire:click`/
+  `wire:submit` on the installer wizard itself — whose initial GET at
+  `/install` legitimately passed the gate — hit that hashed endpoint on its
+  *next* request, which the middleware saw as "not `/install*`, not
+  installed yet" and redirected to `/install`; Livewire's JS can't parse a
+  redirect as a component response, so from the browser it just looked like
+  the Continue button silently reloaded back to the requirements page
+  instead of advancing — reported as exactly that symptom against a real
+  deployment. Fixed with `Livewire::isLivewireRequest()` (checks the
+  `X-Livewire` header Livewire's own JS client sends, stable regardless of
+  the hash) instead of any path pattern. This is the same class of bug as
+  the `Livewire::addPersistentMiddleware()` note above — a global/route
+  middleware interacting with Livewire's internal endpoint in a
+  non-obvious way — and inherits the same testing blind spot:
+  `RedirectIfNotInstalled` no-ops entirely under `app()->environment('testing')`
+  (needed so the existing suite doesn't get redirected on every request),
+  which means exercising its real branches in PHPUnit requires temporarily
+  swapping `$this->app['env']` to something else and manually rebinding
+  `request()` to a crafted `Illuminate\Http\Request` before each
+  `$middleware->handle(...)` call (see
+  `InstallerTest::test_livewire_ajax_requests_are_exempt_from_the_install_redirect`)
+  — the middleware and `Livewire::isLivewireRequest()` both read the
+  container-bound `request()`, not a parameter, so a stale binding silently
+  makes assertions pass against the wrong request. Confirmed the actual fix
+  against a real running server with Playwright (not just this unit test):
+  captured the live POST to the real hashed endpoint, watched it return 200
+  instead of a redirect, and watched the wizard's heading genuinely advance
+  from "Welcome to BizManager" to "Database Connection".
 - **A compatibility gate runs before Composer's autoloader is even
   required.** `bootstrap/preflight.php` (required from `public/index.php`
   before `vendor/autoload.php`) is deliberately zero-dependency plain PHP —
