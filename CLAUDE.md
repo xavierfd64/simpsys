@@ -166,6 +166,31 @@ shared-hosting-appropriate.
   catches the length problem without needing a real MySQL connection in
   CI; confirmed it actually fails against the original migration by
   temporarily reverting the fix and re-running just that test.
+- **Laravel's own stock `public/.htaccess` doesn't rewrite a bare `/`
+  request to `index.php` at all — it relies on Apache's native
+  `DirectoryIndex` resolution finding it instead, which fails on any host
+  whose default `DirectoryIndex` list doesn't include `index.php`.** The
+  front-controller rewrite rule's own condition,
+  `RewriteCond %{REQUEST_FILENAME} !-d`, is specifically false for a
+  request that maps to an *existing directory* — which a bare `/` always
+  does — so that rule is skipped by design for exactly that one request
+  shape, on every Laravel install everywhere; `/install`, `/login`, or any
+  other path that isn't a real directory just works. Genuinely reproduced
+  with a real Apache server: pointed `DocumentRoot` at `public/`, set
+  `DirectoryIndex` to a nonexistent filename (simulating a host that
+  doesn't default to `index.php`), and got exactly the reported split — a
+  bare `/` 403s with Apache's own "no default file found" page, while
+  `/install` returns 200 on the identical `.htaccess`. Reported against a
+  real deployment target (InfinityFree/gt.tc) after the installer itself
+  had already worked end-to-end, which is what made this one confusing:
+  every route with a path component behaved fine. Fixed by adding an
+  explicit `DirectoryIndex index.php index.html` to both `public/.htaccess`
+  and the root-level `.htaccess` shim (the latter's own rewrite rule
+  doesn't have this `!-d` gate and so wasn't actually affected, but it
+  costs nothing to be consistent). Confirmed the fix by re-running the
+  identical simulated-host Apache test and watching `/` return 200 with
+  the fix in place, for both the `DocumentRoot=public/` and root-shim
+  deployment layouts.
 - **A plain `utf8mb4 VARCHAR(255)` unique/primary column can be un-indexable
   on shared hosting, even though it's completely fine on a modern default
   MySQL install.** `255 chars × 4 bytes/char (utf8mb4) = 1020 bytes` —
