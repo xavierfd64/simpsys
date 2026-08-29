@@ -37,8 +37,17 @@ return new class extends Migration
         Schema::create('failed_jobs', function (Blueprint $table) {
             $table->id();
             $table->string('uuid')->unique();
-            $table->string('connection');
-            $table->string('queue');
+            // Explicit lengths here (Laravel's stock migration leaves these
+            // unlengthed): the global 191-char default keeps any single
+            // indexed string safely under a restrictive host's key-length
+            // cap, but this is a composite index over *two* string columns
+            // — 191 * 4 bytes (utf8mb4) each would combine to ~1528 bytes,
+            // still over a 1000-byte limit even though neither column
+            // alone would be. 100 chars is already more than any real
+            // queue connection/name needs, and keeps the combined index
+            // (100 * 4 * 2 + the timestamp) safely under 1000 bytes.
+            $table->string('connection', 100);
+            $table->string('queue', 100);
             $table->longText('payload');
             $table->longText('exception');
             $table->timestamp('failed_at')->useCurrent();

@@ -191,6 +191,38 @@ shared-hosting-appropriate.
   identical simulated-host Apache test and watching `/` return 200 with
   the fix in place, for both the `DocumentRoot=public/` and root-shim
   deployment layouts.
+- **`Schema::defaultStringLength(191)` protects a single indexed string
+  column, but not a composite index spanning multiple string columns.**
+  Laravel's stock `failed_jobs` migration indexes `(connection, queue,
+  failed_at)` — both `connection` and `queue` are unlengthed strings, so
+  even at the app-wide 191-char default that's `191 × 4 bytes × 2 ≈ 1528
+  bytes`, still over the same 1000-byte host limit from the note above,
+  despite neither column alone exceeding it. Found by a real installer run
+  against a real host progressing *past* the `password_reset_tokens` fix
+  and failing on the next table with the identical error class — a useful
+  reminder that fixing one instance of a byte-limit bug doesn't
+  automatically fix every shape that bug can take. Audited every composite
+  `index()`/`unique()`/`primary()` across all migrations for this specific
+  shape (multiple large string columns in one index — tenant_id-plus-one-
+  string patterns like `unique(['tenant_id', 'name'])` stay well under the
+  limit since a bigint contributes only 8 bytes); `failed_jobs` was the
+  only offender. Fixed by giving `connection`/`queue` explicit `100`-char
+  lengths (plenty for real connection/queue names, and `100 × 4 × 2 ≈ 800`
+  bytes, safely under 1000) rather than lowering the global default
+  further, which would've been an unnecessarily broad fix for a
+  narrowly-scoped problem. Verified end-to-end against a real MariaDB
+  server forced into the same restrictive condition: a completely fresh
+  database through *every* migration (not just a re-run from the
+  previously-failing one) via both a raw `migrate:fresh` and the full
+  installer wizard. Added
+  `MigrationCompatibilityTest::test_no_composite_index_of_string_columns_exceeds_1000_bytes_under_utf8mb4`,
+  which parses migration source directly (SQLite's schema introspection
+  drops declared VARCHAR lengths entirely — confirmed via `sqlite_master`'s
+  raw `CREATE TABLE` text, every string column comes back as bare
+  `varchar` with no length — so inspecting the migrated schema itself
+  can't catch this; only reading what the migration *declared* can);
+  confirmed it fails against the original migration by reverting the fix
+  and re-running just that test.
 - **A plain `utf8mb4 VARCHAR(255)` unique/primary column can be un-indexable
   on shared hosting, even though it's completely fine on a modern default
   MySQL install.** `255 chars × 4 bytes/char (utf8mb4) = 1020 bytes` —

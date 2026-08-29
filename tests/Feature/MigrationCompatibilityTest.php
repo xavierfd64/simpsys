@@ -55,4 +55,61 @@ class MigrationCompatibilityTest extends TestCase
     {
         $this->assertSame(191, Builder::$defaultStringLength);
     }
+
+    /**
+     * `Schema::defaultStringLength(191)` keeps any *single* indexed string
+     * column safely under a restrictive host's key-length cap, but a
+     * composite index spanning *multiple* string columns can still exceed
+     * it even with every column individually at 191 chars — exactly what
+     * happened with failed_jobs' stock (connection, queue, failed_at)
+     * index: 191 * 4 bytes * 2 string columns ≈ 1528 bytes, still over a
+     * 1000-byte limit neither column alone would hit. SQLite drops
+     * declared VARCHAR lengths entirely (confirmed via sqlite_master's raw
+     * CREATE TABLE text — every string column comes back as bare
+     * `varchar`, no length), so this parses the migration source directly
+     * rather than inspecting the migrated schema, which is the only way to
+     * catch this class of bug without a real MySQL connection.
+     */
+    public function test_no_composite_index_of_string_columns_exceeds_1000_bytes_under_utf8mb4(): void
+    {
+        $defaultLength = Builder::$defaultStringLength;
+        $violations = [];
+
+        foreach (glob(database_path('migrations/*.php')) as $file) {
+            $source = file_get_contents($file);
+
+            // Column name => explicit length, or $defaultLength if none given.
+            $stringColumns = [];
+            preg_match_all("/->string\('(\w+)'(?:,\s*(\d+))?\)/", $source, $matches, PREG_SET_ORDER);
+            foreach ($matches as $match) {
+                $stringColumns[$match[1]] = isset($match[2]) && $match[2] !== ''
+                    ? (int) $match[2]
+                    : $defaultLength;
+            }
+
+            preg_match_all('/->(?:index|unique|primary)\(\[([^\]]+)\]/', $source, $matches, PREG_SET_ORDER);
+            foreach ($matches as $match) {
+                $columns = array_map(
+                    fn ($col) => trim($col, " '\""),
+                    explode(',', $match[1])
+                );
+
+                $bytes = 0;
+                foreach ($columns as $column) {
+                    if (isset($stringColumns[$column])) {
+                        $bytes += $stringColumns[$column] * 4; // utf8mb4
+                    }
+                }
+
+                if ($bytes > 1000) {
+                    $violations[] = basename($file).': ('.implode(', ', $columns).") ≈ {$bytes} bytes";
+                }
+            }
+        }
+
+        $this->assertEmpty(
+            $violations,
+            "These composite indexes exceed 1000 bytes under utf8mb4:\n".implode("\n", $violations)
+        );
+    }
 }
