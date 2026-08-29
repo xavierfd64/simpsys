@@ -23,7 +23,12 @@ return new class extends Migration
             $table->string('note')->nullable();
             $table->timestamp('created_at')->useCurrent();
 
-            $table->index(['tenant_id', 'product_id', 'created_at']);
+            // Named explicitly: Laravel's auto-generated name for this
+            // column combination is 65 characters, one past MySQL's
+            // 64-character identifier limit (SQLite has no such limit,
+            // which is why this only surfaces once a real MySQL/MariaDB
+            // database runs the migration).
+            $table->index(['tenant_id', 'product_id', 'created_at'], 'product_inventory_movements_tenant_product_created_idx');
         });
     }
 

@@ -20,7 +20,11 @@ return new class extends Migration
             $table->string('note')->nullable();
             $table->timestamp('created_at')->useCurrent();
 
-            $table->index(['tenant_id', 'supply_id', 'created_at']);
+            // Named explicitly for symmetry with the product_inventory_movements
+            // migration — that one's auto-generated name exceeds MySQL's
+            // 64-character identifier limit; this one is only 1 character
+            // under it, so a future column rename would tip it over too.
+            $table->index(['tenant_id', 'supply_id', 'created_at'], 'supply_inventory_movements_tenant_supply_created_idx');
         });
     }
 

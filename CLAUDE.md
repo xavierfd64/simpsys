@@ -145,6 +145,44 @@ shared-hosting-appropriate.
   `require.php`, or just read the generated
   `vendor/composer/platform_check.php`'s `PHP_VERSION_ID` check — that
   file, not `composer.json`, is the actual enforced floor.
+- **Never rely on SQLite to validate a migration that must also run on
+  MySQL.** `product_inventory_movements`' composite index on
+  `(tenant_id, product_id, created_at)` auto-generates the name
+  `product_inventory_movements_tenant_id_product_id_created_at_index` —
+  65 characters, one past MySQL's hard 64-character identifier limit.
+  SQLite has no such limit, so this passed silently through local dev and
+  the entire test suite (every migration in this project had, until this
+  point, only ever run on SQLite) and only surfaced as a real
+  `SQLSTATE[42000]: ... Identifier name '...' is too long` when the
+  installer wizard ran `migrate` against a real MySQL/MariaDB database for
+  the first time — genuinely reproduced with a real MariaDB server during
+  installer verification, not inferred from reading the code. Fixed by
+  giving that index (and `supply_inventory_movements`' matching one, which
+  at 63 characters was one column-rename away from the same failure)
+  explicit short names. Added
+  `MigrationCompatibilityTest::test_no_generated_index_name_exceeds_mysqls_64_character_limit`,
+  which inspects `sqlite_master` after the test suite's own migrations run
+  — Laravel computes the same index name regardless of driver, so this
+  catches the length problem without needing a real MySQL connection in
+  CI; confirmed it actually fails against the original migration by
+  temporarily reverting the fix and re-running just that test.
+- **A Livewire component action that fails mid-install must not surface as
+  a bare 500.** `submitDatabase()`/`submitAdmin()` on the installer wizard
+  now wrap their actual work in `try`/`catch (\Throwable)`: the connection
+  test already confirms the database is reachable before either runs, so a
+  failure past that point (the MySQL identifier-length bug above was
+  caught exactly this way) is something going wrong while creating the
+  schema or account, not a config problem the user can fix by re-entering
+  credentials. Each catch calls `report($e)` (so the full exception still
+  reaches the server's own logs for real diagnosis) and sets a
+  `$setup_error` string shown inline on the current step — "Installation
+  could not continue", which step, the exception's own message, and a note
+  that retrying is safe since Laravel's migrator only replays migrations
+  that didn't already run. Deliberately shows the real exception message
+  rather than a generic one: `QueryException`'s message format
+  (`SQLSTATE[...]: ... (Connection: ..., SQL: ...)`) doesn't include the
+  password, and an installer admin is exactly who should see the real
+  reason.
 - **A global route-gating middleware must explicitly exempt Livewire's own
   AJAX endpoint, and by header, not by path.** `RedirectIfNotInstalled`
   redirects every request to `/install` until `storage/app/installed.lock`

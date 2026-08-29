@@ -26,6 +26,8 @@ new #[Layout('layouts.install')] #[Title('Install BizManager')] class extends Co
 
     public ?string $db_error = null;
 
+    public ?string $setup_error = null;
+
     public string $admin_name = '';
 
     public string $admin_email = '';
@@ -84,9 +86,26 @@ new #[Layout('layouts.install')] #[Title('Install BizManager')] class extends Co
         }
 
         $this->db_error = null;
+        $this->setup_error = null;
 
-        $installer->applyDatabaseConfig([...$config, 'app_url' => request()->getSchemeAndHttpHost()]);
-        $installer->migrateAndSeed();
+        try {
+            $installer->applyDatabaseConfig([...$config, 'app_url' => request()->getSchemeAndHttpHost()]);
+            $installer->migrateAndSeed();
+        } catch (\Throwable $e) {
+            // The connection itself is confirmed good at this point — a
+            // failure here is something going wrong while setting up the
+            // schema (a migration error, disk space, etc.), which must
+            // never surface as a bare, unexplained 500 mid-install. Logged
+            // in full via report() so the real cause is diagnosable from
+            // the server's own logs, even though only a summary is shown
+            // here. Retrying is safe: Laravel's migrator tracks which
+            // migrations already ran and only replays the ones that didn't.
+            report($e);
+
+            $this->setup_error = $e->getMessage();
+
+            return;
+        }
 
         $this->step = 3;
     }
@@ -101,13 +120,23 @@ new #[Layout('layouts.install')] #[Title('Install BizManager')] class extends Co
 
         $installer = app(InstallerService::class);
 
-        $installer->createAdmin([
-            'name' => $this->admin_name,
-            'email' => $this->admin_email,
-            'password' => $this->admin_password,
-        ]);
+        $this->setup_error = null;
 
-        $installer->lock();
+        try {
+            $installer->createAdmin([
+                'name' => $this->admin_name,
+                'email' => $this->admin_email,
+                'password' => $this->admin_password,
+            ]);
+
+            $installer->lock();
+        } catch (\Throwable $e) {
+            report($e);
+
+            $this->setup_error = $e->getMessage();
+
+            return;
+        }
 
         $this->step = 4;
     }
@@ -169,6 +198,15 @@ new #[Layout('layouts.install')] #[Title('Install BizManager')] class extends Co
                 </div>
             @endif
 
+            @if ($setup_error)
+                <div class="mt-4 rounded-lg border border-danger-500/30 bg-red-50 p-4">
+                    <p class="text-sm font-semibold text-danger-500">Installation could not continue</p>
+                    <p class="mt-1 text-xs font-medium uppercase tracking-wide text-danger-500/70">Step: Setting up your database</p>
+                    <p class="mt-2 text-sm text-ink">{{ $setup_error }}</p>
+                    <p class="mt-2 text-xs text-muted">The connection itself worked — this happened while creating the database tables. It's safe to try again below once the underlying issue is resolved; anything already set up won't be redone.</p>
+                </div>
+            @endif
+
             <form wire:submit="submitDatabase" class="mt-6 space-y-4">
                 <div class="grid gap-4 sm:grid-cols-3">
                     <div class="sm:col-span-2">
@@ -213,6 +251,14 @@ new #[Layout('layouts.install')] #[Title('Install BizManager')] class extends Co
         @if ($step === 3)
             <h1 class="text-xl font-semibold text-ink">Create Your Admin Account</h1>
             <p class="mt-1 text-sm text-muted">This is the Super Admin account for managing the whole platform.</p>
+
+            @if ($setup_error)
+                <div class="mt-4 rounded-lg border border-danger-500/30 bg-red-50 p-4">
+                    <p class="text-sm font-semibold text-danger-500">Installation could not continue</p>
+                    <p class="mt-1 text-xs font-medium uppercase tracking-wide text-danger-500/70">Step: Creating your admin account</p>
+                    <p class="mt-2 text-sm text-ink">{{ $setup_error }}</p>
+                </div>
+            @endif
 
             <form wire:submit="submitAdmin" class="mt-6 space-y-4">
                 <div>
