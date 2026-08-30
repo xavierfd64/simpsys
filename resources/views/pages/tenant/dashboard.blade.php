@@ -6,6 +6,7 @@ use App\Models\PlatformNotification;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\Supply;
+use App\Models\Tenant;
 use App\Services\TenantContext;
 use App\Support\Money;
 use Illuminate\Support\Facades\Auth;
@@ -27,6 +28,8 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 
     public string $dateTo = '';
 
+    public string $branchFilter = 'all';
+
     public function mount(): void
     {
         $now = now(app(TenantContext::class)->tenant()->timezone);
@@ -40,6 +43,35 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
     public function getTenantProperty()
     {
         return app(TenantContext::class)->tenant();
+    }
+
+    public function getBusinessProperty(): Tenant
+    {
+        return $this->tenant->businessRoot();
+    }
+
+    /**
+     * The root tenant plus every branch that has (or had) real operational
+     * data — pending/rejected branches never ran, so they're excluded from
+     * comparison. A single-branch business always resolves to just [root],
+     * which keeps every stat below identical to its pre-multi-branch value.
+     */
+    public function getComparableBranchesProperty()
+    {
+        return collect([$this->business])
+            ->concat($this->business->branches()->whereIn('branch_status', ['active', 'suspended'])->get());
+    }
+
+    /**
+     * @return array<int>
+     */
+    protected function filteredTenantIds(): array
+    {
+        if ($this->branchFilter !== 'all') {
+            return [(int) $this->branchFilter];
+        }
+
+        return $this->comparableBranches->pluck('id')->all();
     }
 
     public function getPeriodRangeProperty(): array
@@ -93,7 +125,7 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         [$from, $to] = $this->periodRange;
         [$start, $end] = $this->tenant->localRangeBoundsUtc($from, $to);
 
-        return Sale::query()
+        return Sale::forTenants($this->filteredTenantIds())
             ->where('status', SaleStatus::Completed)
             ->whereBetween('created_at', [$start, $end])
             ->sum('total');
@@ -104,7 +136,7 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         [$from, $to] = $this->periodRange;
         [$start, $end] = $this->tenant->localRangeBoundsUtc($from, $to);
 
-        return Sale::query()
+        return Sale::forTenants($this->filteredTenantIds())
             ->where('status', SaleStatus::Completed)
             ->whereBetween('created_at', [$start, $end])
             ->count();
@@ -114,7 +146,7 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
     {
         [$from, $to] = $this->periodRange;
 
-        return Expense::query()
+        return Expense::forTenants($this->filteredTenantIds())
             ->whereDate('expense_date', '>=', $from)
             ->whereDate('expense_date', '<=', $to)
             ->sum('amount');
@@ -151,23 +183,70 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         [$from, $to] = $this->periodRange;
         [$start, $end] = $this->tenant->localRangeBoundsUtc($from, $to);
 
-        return Sale::query()->with('cashier')->whereBetween('created_at', [$start, $end])->latest('id')->limit(5)->get();
+        return Sale::forTenants($this->filteredTenantIds())->with('cashier')->whereBetween('created_at', [$start, $end])->latest('id')->limit(5)->get();
     }
 
     public function getSalesTrendProperty(): array
     {
         $days = collect(range(6, 0))->map(fn ($i) => $this->today->copy()->subDays($i));
+        $tenantIds = $this->filteredTenantIds();
 
-        return $days->map(function ($day) {
+        return $days->map(function ($day) use ($tenantIds) {
             [$start, $end] = $this->tenant->localDayBoundsUtc($day->toDateString());
 
-            $total = Sale::query()
+            $total = Sale::forTenants($tenantIds)
                 ->where('status', SaleStatus::Completed)
                 ->whereBetween('created_at', [$start, $end])
                 ->sum('total');
 
             return ['label' => $day->format('D'), 'total' => $total];
         })->all();
+    }
+
+    /**
+     * Per-branch sales/expenses/net income/transactions for the current
+     * period — the "Branch Performance" comparison table. Only meaningful
+     * (and only rendered) when the business has more than one branch.
+     *
+     * @return array<int, array{tenant: Tenant, sales: int, expenses: int, net: int, transactions: int}>
+     */
+    public function getBranchPerformanceProperty(): array
+    {
+        [$from, $to] = $this->periodRange;
+
+        return $this->comparableBranches->map(function (Tenant $branchTenant) use ($from, $to) {
+            [$start, $end] = $branchTenant->localRangeBoundsUtc($from, $to);
+
+            $sales = Sale::forTenant($branchTenant)->where('status', SaleStatus::Completed)->whereBetween('created_at', [$start, $end])->sum('total');
+            $transactions = Sale::forTenant($branchTenant)->where('status', SaleStatus::Completed)->whereBetween('created_at', [$start, $end])->count();
+            $expenses = Expense::forTenant($branchTenant)->whereDate('expense_date', '>=', $from)->whereDate('expense_date', '<=', $to)->sum('amount');
+
+            return [
+                'tenant' => $branchTenant,
+                'sales' => $sales,
+                'expenses' => $expenses,
+                'net' => $sales - $expenses,
+                'transactions' => $transactions,
+            ];
+        })->all();
+    }
+
+    public function getBestBranchIdProperty(): ?int
+    {
+        if (count($this->branchPerformance) < 2) {
+            return null;
+        }
+
+        return collect($this->branchPerformance)->sortByDesc('net')->first()['tenant']->id;
+    }
+
+    public function getWorstBranchIdProperty(): ?int
+    {
+        if (count($this->branchPerformance) < 2) {
+            return null;
+        }
+
+        return collect($this->branchPerformance)->sortBy('net')->first()['tenant']->id;
     }
 }; ?>
 
@@ -185,6 +264,17 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         </div>
 
         <div class="flex flex-wrap items-end gap-3">
+            @if ($this->comparableBranches->count() > 1)
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">Branch</label>
+                    <select wire:model.live="branchFilter" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                        <option value="all">All Branches</option>
+                        @foreach ($this->comparableBranches as $branchTenant)
+                            <option value="{{ $branchTenant->id }}">{{ $branchTenant->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @endif
             <div>
                 <label class="mb-1 block text-xs font-medium text-muted">Period</label>
                 <select wire:model.live="period" class="rounded-lg border border-hairline px-3 py-2 text-sm">
@@ -297,6 +387,54 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
             </div>
         </div>
     </div>
+
+    @if ($this->comparableBranches->count() > 1)
+        <div class="rounded-xl border border-hairline bg-surface">
+            <div class="border-b border-hairline p-4">
+                <h3 class="text-sm font-medium text-ink">Branch Performance</h3>
+                <p class="mt-0.5 text-xs text-muted">{{ $this->periodLabel }}</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[640px] text-left text-sm">
+                    <thead class="border-b border-hairline text-xs font-medium uppercase text-muted">
+                        <tr>
+                            <th class="px-4 py-3">Branch</th>
+                            <th class="px-4 py-3 text-right">Sales</th>
+                            <th class="px-4 py-3 text-right">Expenses</th>
+                            <th class="px-4 py-3 text-right">Net Income</th>
+                            <th class="px-4 py-3 text-right">Transactions</th>
+                            <th class="px-4 py-3">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-hairline">
+                        @foreach ($this->branchPerformance as $row)
+                            <tr>
+                                <td class="px-4 py-3 font-medium text-ink">
+                                    {{ $row['tenant']->name }}
+                                    @if ($row['tenant']->id === $this->bestBranchId)
+                                        <span class="ml-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">Best</span>
+                                    @elseif ($row['tenant']->id === $this->worstBranchId)
+                                        <span class="ml-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Needs Attention</span>
+                                    @endif
+                                </td>
+                                <td class="px-4 py-3 text-right text-ink">{{ Money::format($row['sales']) }}</td>
+                                <td class="px-4 py-3 text-right text-ink">{{ Money::format($row['expenses']) }}</td>
+                                <td class="px-4 py-3 text-right {{ $row['net'] < 0 ? 'text-danger-500' : 'text-ink' }}">{{ Money::format($row['net']) }}</td>
+                                <td class="px-4 py-3 text-right text-ink">{{ $row['transactions'] }}</td>
+                                <td class="px-4 py-3">
+                                    @if ($row['tenant']->isBranch())
+                                        <span class="rounded-full px-2 py-1 text-xs font-medium {{ $row['tenant']->branch_status->badgeClasses() }}">{{ $row['tenant']->branch_status->label() }}</span>
+                                    @else
+                                        <span class="rounded-full px-2 py-1 text-xs font-medium {{ $row['tenant']->status->badgeClasses() }}">{{ $row['tenant']->status->label() }}</span>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    @endif
 
     <div class="rounded-xl border border-hairline bg-surface">
         <div class="flex items-center justify-between border-b border-hairline p-4">
