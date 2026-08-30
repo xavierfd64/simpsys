@@ -64,7 +64,7 @@ class PlansPromotionsNotificationsTest extends TestCase
             ->set('audience', 'active')
             ->set('title', 'Scheduled Maintenance')
             ->set('message', 'We will be down for maintenance tonight.')
-            ->call('send')
+            ->call('save')
             ->assertHasNoErrors();
 
         $this->actingAs($owner);
@@ -85,7 +85,7 @@ class PlansPromotionsNotificationsTest extends TestCase
             ->set('audience', 'trial')
             ->set('title', 'Trial Ending Soon')
             ->set('message', 'Your trial ends in 3 days.')
-            ->call('send');
+            ->call('save');
 
         $this->actingAs($owner);
         app(TenantContext::class)->setMembership($membership);

@@ -108,11 +108,15 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 
     public function getPlatformNoticeProperty()
     {
-        return PlatformNotification::query()
+        $notice = PlatformNotification::query()
             ->forTenant($this->tenant)
             ->where('created_at', '>=', now()->subDays(14))
             ->latest('id')
             ->first();
+
+        $notice?->markReadFor($this->tenant, Auth::user());
+
+        return $notice;
     }
 
     public function getTodayProperty(): \Carbon\CarbonInterface
