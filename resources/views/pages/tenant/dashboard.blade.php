@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\SaleStatus;
+use App\Enums\SubscriptionStatus;
 use App\Models\Expense;
 use App\Models\PlatformNotification;
 use App\Models\Product;
@@ -10,6 +11,7 @@ use App\Models\Tenant;
 use App\Services\TenantContext;
 use App\Support\Money;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -117,6 +119,37 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
         $notice?->markReadFor($this->tenant, Auth::user());
 
         return $notice;
+    }
+
+    /**
+     * A short "trial/subscription ends soon" message — the owner
+     * previously had no in-app visibility of this at all, only the
+     * separate reminder email. Only the business root carries a
+     * subscription, so this stays null while viewing a branch.
+     */
+    public function getBillingBannerProperty(): ?string
+    {
+        $subscription = $this->business->currentSubscription();
+
+        if (! $subscription || ! $subscription->current_period_end) {
+            return null;
+        }
+
+        if (! in_array($subscription->status, [SubscriptionStatus::Trial, SubscriptionStatus::Active], true)) {
+            return null;
+        }
+
+        $daysLeft = (int) ceil(now()->diffInDays($subscription->current_period_end, false));
+
+        if ($daysLeft < 0 || $daysLeft > 7) {
+            return null;
+        }
+
+        $label = $subscription->status === SubscriptionStatus::Trial ? 'Your trial' : 'Your subscription';
+
+        return $daysLeft <= 0
+            ? "{$label} ends today."
+            : "{$label} ends in {$daysLeft} ".Str::plural('day', $daysLeft).'.';
     }
 
     public function getTodayProperty(): \Carbon\CarbonInterface
@@ -324,6 +357,16 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
                 <p class="text-sm font-semibold text-primary-700">{{ $this->platformNotice->title }}</p>
                 <p class="mt-0.5 text-sm text-primary-700">{{ $this->platformNotice->message }}</p>
             </div>
+        </div>
+    @endif
+
+    @if ($this->billingBanner)
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div class="flex items-center gap-3">
+                <x-lucide-clock class="h-5 w-5 shrink-0 text-amber-600" />
+                <p class="text-sm font-medium text-amber-800">{{ $this->billingBanner }}</p>
+            </div>
+            <a href="{{ route('app.billing') }}" class="shrink-0 text-sm font-semibold text-amber-800 hover:underline">View Billing</a>
         </div>
     @endif
 

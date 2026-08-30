@@ -417,6 +417,60 @@ shared-hosting-appropriate.
   first and applying the same fix proactively rather than rediscovering it
   the same way a second time.
 
+## Automation audit (round 2)
+
+A review pass across every customer-facing workflow, done alongside the multi-
+branch/email/billing work above rather than as a separate pass, since most of
+what it would have flagged got fixed in the course of building those features
+anyway. Findings:
+
+- **Registration, account activation, password reset, system onboarding
+  (the `/install` wizard)** — already fully self-service and automated
+  from Stage 13 onward; nothing found here.
+- **Trial → Expired transition** — this was a real, pre-existing gap: a
+  trial or active subscription whose `current_period_end` passed with no
+  payment just sat at its old status forever with no automatic
+  transition, silently relying on a Platform Admin to notice and expire
+  it by hand. Fixed by `BillingReminderService::expireLapsedSubscriptions()`
+  (see the `OpportunisticScheduler` note above) — purely date-driven, no
+  payment-gateway confirmation needed since "the period ended" is a fact
+  about time, not a claim about payment.
+- **Billing reminders** — fixed the same way; a subscription (trial or
+  paid) now gets an automatic email 7 days before its due date, whether
+  that due date is a trial ending or a paid renewal, since both use the
+  same `current_period_end` field.
+- **Owner visibility of their own trial/renewal status** — a second real
+  gap: before this round, nothing in the tenant-facing UI showed the
+  owner their subscription status or how long was left on it — only an
+  external email said so, and only 7 days out. Fixed with the new
+  `/app/billing` statement page (viewable any time) plus a short banner on
+  the dashboard when the period ends within 7 days, reusing the same
+  banner styling the existing platform-notice banner already uses instead
+  of introducing a new UI pattern.
+- **Branch approval, notice publishing/content, recording a payment** —
+  reviewed and left manual on purpose, not gaps: the spec itself requires
+  a human Platform Admin decision for branch approval; a notice's content
+  is inherently something a human writes; and platform billing has no
+  payment gateway integrated (POS-level `payment_methods` like Cash/GCash
+  are a tenant's own sale settings, unrelated to platform subscription
+  billing) — recording a payment is a Platform Admin attesting they
+  verified a real external payment (bank transfer, GCash, etc.) actually
+  arrived. Automating that confirmation without a real gateway would mean
+  trusting an unverified claim, which the spec explicitly rules out; this
+  stays a deliberate manual step until a real gateway is integrated.
+- **New employee (cashier/kitchen staff) accounts** — the owner sets the
+  new hire's password directly on the Users page rather than the system
+  emailing a generated one. Reviewed and left as-is: for this app's
+  target business (a small fishball/milk-tea cart), the owner and new
+  hire are typically standing next to each other when the account is
+  created, so a manual password beats an email-based invite flow's added
+  complexity for no real benefit here.
+- **Email verification** — still intentionally not implemented (see the
+  Stage 1-era note on `User`'s guarded `email_verified_at`); a
+  self-registered owner is auto-verified and there's no
+  `MustVerifyEmail`-gated flow to automate, so this is N/A rather than a
+  gap, matching the spec's own "if applicable" framing.
+
 ## Stage progress
 
 Tracking the master instruction's Development Order (section 35):

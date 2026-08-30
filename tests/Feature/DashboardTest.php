@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Enums\BillingPeriod;
 use App\Enums\OrderType;
 use App\Enums\ProductInventoryMovementType;
+use App\Enums\SubscriptionStatus;
 use App\Enums\TenantMembershipRole;
 use App\Models\Expense;
 use App\Models\PaymentMethod;
 use App\Models\Product;
+use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\ProductInventoryService;
@@ -114,6 +117,48 @@ class DashboardTest extends TestCase
             ->assertDontSee('No transactions yet.')
             ->assertSee('₱50.00')
             ->assertSee('₱20.00');
+    }
+
+    public function test_dashboard_shows_a_banner_when_the_trial_ends_within_a_week(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $owner = User::factory()->create();
+        $membership = $tenant->memberships()->create(['user_id' => $owner->id, 'role' => TenantMembershipRole::Owner]);
+        $plan = SubscriptionPlan::factory()->create();
+        $tenant->subscriptions()->create([
+            'subscription_plan_id' => $plan->id,
+            'billing_period' => BillingPeriod::Monthly,
+            'status' => SubscriptionStatus::Trial,
+            'current_period_start' => now()->subDays(9),
+            'current_period_end' => now()->addDays(5),
+        ]);
+
+        $this->actingAs($owner);
+        app(TenantContext::class)->setMembership($membership);
+
+        Livewire::test('pages::tenant.dashboard')
+            ->assertSee('Your trial ends in 5 days.')
+            ->assertSee('View Billing');
+    }
+
+    public function test_dashboard_does_not_show_a_billing_banner_when_the_period_is_not_ending_soon(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $owner = User::factory()->create();
+        $membership = $tenant->memberships()->create(['user_id' => $owner->id, 'role' => TenantMembershipRole::Owner]);
+        $plan = SubscriptionPlan::factory()->create();
+        $tenant->subscriptions()->create([
+            'subscription_plan_id' => $plan->id,
+            'billing_period' => BillingPeriod::Monthly,
+            'status' => SubscriptionStatus::Trial,
+            'current_period_start' => now(),
+            'current_period_end' => now()->addDays(20),
+        ]);
+
+        $this->actingAs($owner);
+        app(TenantContext::class)->setMembership($membership);
+
+        Livewire::test('pages::tenant.dashboard')->assertDontSee('View Billing');
     }
 
     public function test_only_owner_can_access_the_dashboard(): void
