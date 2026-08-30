@@ -15,9 +15,63 @@ use Livewire\Component;
 
 new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 {
+    public string $period = 'today';
+
+    public string $selectedDate = '';
+
+    public string $selectedMonth = '';
+
+    public string $selectedYear = '';
+
+    public string $dateFrom = '';
+
+    public string $dateTo = '';
+
+    public function mount(): void
+    {
+        $now = now(app(TenantContext::class)->tenant()->timezone);
+        $this->selectedDate = $now->toDateString();
+        $this->selectedMonth = $now->format('Y-m');
+        $this->selectedYear = $now->format('Y');
+        $this->dateFrom = $now->toDateString();
+        $this->dateTo = $now->toDateString();
+    }
+
     public function getTenantProperty()
     {
         return app(TenantContext::class)->tenant();
+    }
+
+    public function getPeriodRangeProperty(): array
+    {
+        $today = $this->today->toDateString();
+
+        return match ($this->period) {
+            'daily' => [$this->selectedDate ?: $today, $this->selectedDate ?: $today],
+            'monthly' => [
+                \Carbon\Carbon::parse($this->selectedMonth.'-01')->startOfMonth()->toDateString(),
+                \Carbon\Carbon::parse($this->selectedMonth.'-01')->endOfMonth()->toDateString(),
+            ],
+            'yearly' => [
+                \Carbon\Carbon::createFromDate((int) $this->selectedYear, 1, 1)->toDateString(),
+                \Carbon\Carbon::createFromDate((int) $this->selectedYear, 12, 31)->toDateString(),
+            ],
+            'custom' => [$this->dateFrom ?: $today, $this->dateTo ?: $today],
+            default => [$today, $today],
+        };
+    }
+
+    public function getPeriodLabelProperty(): string
+    {
+        [$from, $to] = $this->periodRange;
+
+        return match ($this->period) {
+            'daily' => \Carbon\Carbon::parse($from)->format('M j, Y'),
+            'monthly' => \Carbon\Carbon::parse($from)->format('F Y'),
+            'yearly' => \Carbon\Carbon::parse($from)->format('Y'),
+            'custom' => \Carbon\Carbon::parse($from)->format('M j, Y').' – '.\Carbon\Carbon::parse($to)->format('M j, Y'),
+            default => 'Today',
+        };
     }
 
     public function getPlatformNoticeProperty()
@@ -36,7 +90,8 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 
     public function getTodaysSalesProperty(): int
     {
-        [$start, $end] = $this->tenant->localDayBoundsUtc($this->today->toDateString());
+        [$from, $to] = $this->periodRange;
+        [$start, $end] = $this->tenant->localRangeBoundsUtc($from, $to);
 
         return Sale::query()
             ->where('status', SaleStatus::Completed)
@@ -46,7 +101,8 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 
     public function getTodaysTransactionsProperty(): int
     {
-        [$start, $end] = $this->tenant->localDayBoundsUtc($this->today->toDateString());
+        [$from, $to] = $this->periodRange;
+        [$start, $end] = $this->tenant->localRangeBoundsUtc($from, $to);
 
         return Sale::query()
             ->where('status', SaleStatus::Completed)
@@ -56,7 +112,12 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 
     public function getTodaysExpensesProperty(): int
     {
-        return Expense::query()->whereDate('expense_date', $this->today->toDateString())->sum('amount');
+        [$from, $to] = $this->periodRange;
+
+        return Expense::query()
+            ->whereDate('expense_date', '>=', $from)
+            ->whereDate('expense_date', '<=', $to)
+            ->sum('amount');
     }
 
     public function getNetIncomeProperty(): int
@@ -87,7 +148,10 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 
     public function getRecentSalesProperty()
     {
-        return Sale::query()->with('cashier')->latest('id')->limit(5)->get();
+        [$from, $to] = $this->periodRange;
+        [$start, $end] = $this->tenant->localRangeBoundsUtc($from, $to);
+
+        return Sale::query()->with('cashier')->whereBetween('created_at', [$start, $end])->latest('id')->limit(5)->get();
     }
 
     public function getSalesTrendProperty(): array
@@ -108,9 +172,55 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 }; ?>
 
 <div class="space-y-6">
-    <div>
-        <h1 class="text-2xl font-semibold text-ink">Good {{ now($this->tenant->timezone)->hour < 12 ? 'morning' : 'day' }}, {{ Auth::user()->name }}</h1>
-        <p class="mt-1 text-sm text-muted">Here's what's happening in your business today, {{ $this->today->format('M j, Y') }}.</p>
+    <div class="flex flex-wrap items-end justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-semibold text-ink">Good {{ now($this->tenant->timezone)->hour < 12 ? 'morning' : 'day' }}, {{ Auth::user()->name }}</h1>
+            <p class="mt-1 text-sm text-muted">
+                @if ($period === 'today')
+                    Here's what's happening in your business today, {{ $this->today->format('M j, Y') }}.
+                @else
+                    Showing your business performance for {{ $this->periodLabel }}.
+                @endif
+            </p>
+        </div>
+
+        <div class="flex flex-wrap items-end gap-3">
+            <div>
+                <label class="mb-1 block text-xs font-medium text-muted">Period</label>
+                <select wire:model.live="period" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                    <option value="today">Today</option>
+                    <option value="daily">Specific Day</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+            @if ($period === 'daily')
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">Date</label>
+                    <input wire:model.live="selectedDate" type="date" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+            @elseif ($period === 'monthly')
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">Month</label>
+                    <input wire:model.live="selectedMonth" type="month" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+            @elseif ($period === 'yearly')
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">Year</label>
+                    <input wire:model.live="selectedYear" type="number" min="2000" max="{{ now()->year + 1 }}" class="w-24 rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+            @elseif ($period === 'custom')
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">From</label>
+                    <input wire:model.live="dateFrom" type="date" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">To</label>
+                    <input wire:model.live="dateTo" type="date" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+            @endif
+        </div>
     </div>
 
     @if ($this->platformNotice)
@@ -125,7 +235,7 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div class="rounded-xl border border-hairline bg-surface p-5">
-            <p class="text-xs font-medium uppercase text-muted">Today's Sales</p>
+            <p class="text-xs font-medium uppercase text-muted">{{ $period === 'today' ? "Today's Sales" : 'Sales' }}</p>
             <p class="mt-1 text-2xl font-semibold text-ink">{{ Money::format($this->todaysSales) }}</p>
         </div>
         <div class="rounded-xl border border-hairline bg-surface p-5">
@@ -133,7 +243,7 @@ new #[Layout('layouts.app')] #[Title('Dashboard')] class extends Component
             <p class="mt-1 text-2xl font-semibold text-ink">{{ $this->todaysTransactions }}</p>
         </div>
         <div class="rounded-xl border border-hairline bg-surface p-5">
-            <p class="text-xs font-medium uppercase text-muted">Today's Expenses</p>
+            <p class="text-xs font-medium uppercase text-muted">{{ $period === 'today' ? "Today's Expenses" : 'Expenses' }}</p>
             <p class="mt-1 text-2xl font-semibold text-ink">{{ Money::format($this->todaysExpenses) }}</p>
         </div>
         <div class="rounded-xl border border-hairline bg-surface p-5">

@@ -143,6 +143,24 @@ class InstallerService
         Artisan::call('migrate', ['--force' => true]);
 
         (new SubscriptionPlanSeeder)->run();
+
+        // Every uploaded image (product photos, expense receipts, tenant
+        // logos) is served from the `public` disk via a URL that only
+        // resolves once public/storage exists — Laravel never creates this
+        // on its own. Without this, uploads silently succeed (file saved,
+        // database updated) but never display anywhere: a broken image,
+        // not an error, which is exactly what made this easy to miss.
+        // Idempotent: Artisan's own command just no-ops if the link is
+        // already there, so re-running install after a partial failure
+        // is safe. Wrapped separately from the rest of this method: a host
+        // with PHP's symlink() disabled would otherwise fail the *entire*
+        // install over what's actually a cosmetic problem (missing photos,
+        // not a broken app) — reported for diagnosis, but not fatal.
+        try {
+            Artisan::call('storage:link');
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     /**

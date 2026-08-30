@@ -86,6 +86,36 @@ class DashboardTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_dashboard_period_filter_scopes_sales_and_expenses_to_the_selected_range(): void
+    {
+        $tenant = Tenant::factory()->create(['timezone' => 'Asia/Manila']);
+        $cashier = User::factory()->create();
+        $owner = User::factory()->create();
+        $membership = $tenant->memberships()->create(['user_id' => $owner->id, 'role' => TenantMembershipRole::Owner]);
+        $paymentMethod = PaymentMethod::factory()->for($tenant)->create();
+        $product = Product::factory()->for($tenant)->create(['selling_price' => 5000]);
+        app(ProductInventoryService::class)->adjust($product, 10, ProductInventoryMovementType::StockAdded);
+
+        // A sale and expense from three days ago — outside "today" by default.
+        Carbon::setTestNow(now($tenant->timezone)->subDays(3));
+        app(SaleService::class)->recordSale($tenant, $cashier, [['product_id' => $product->id, 'quantity' => 1]], OrderType::ToGo, $paymentMethod, 5000);
+        Expense::factory()->for($tenant)->create(['amount' => 2000, 'expense_date' => now($tenant->timezone)->toDateString()]);
+        $threeDaysAgo = now($tenant->timezone)->toDateString();
+        Carbon::setTestNow();
+
+        $this->actingAs($owner);
+        app(TenantContext::class)->setMembership($membership);
+
+        Livewire::test('pages::tenant.dashboard')
+            ->assertSee('No transactions yet.')
+            ->set('period', 'custom')
+            ->set('dateFrom', $threeDaysAgo)
+            ->set('dateTo', $threeDaysAgo)
+            ->assertDontSee('No transactions yet.')
+            ->assertSee('₱50.00')
+            ->assertSee('₱20.00');
+    }
+
     public function test_only_owner_can_access_the_dashboard(): void
     {
         $tenant = Tenant::factory()->create();

@@ -9,6 +9,72 @@ use Livewire\Component;
 
 new #[Layout('layouts.admin')] #[Title('Admin Dashboard')] class extends Component
 {
+    public string $period = 'today';
+
+    public string $selectedDate = '';
+
+    public string $selectedMonth = '';
+
+    public string $selectedYear = '';
+
+    public string $dateFrom = '';
+
+    public string $dateTo = '';
+
+    public function mount(): void
+    {
+        $now = now();
+        $this->selectedDate = $now->toDateString();
+        $this->selectedMonth = $now->format('Y-m');
+        $this->selectedYear = $now->format('Y');
+        $this->dateFrom = $now->toDateString();
+        $this->dateTo = $now->toDateString();
+    }
+
+    public function getPeriodRangeProperty(): array
+    {
+        $today = now()->toDateString();
+
+        return match ($this->period) {
+            'daily' => [$this->selectedDate ?: $today, $this->selectedDate ?: $today],
+            'monthly' => [
+                \Carbon\Carbon::parse($this->selectedMonth.'-01')->startOfMonth()->toDateString(),
+                \Carbon\Carbon::parse($this->selectedMonth.'-01')->endOfMonth()->toDateString(),
+            ],
+            'yearly' => [
+                \Carbon\Carbon::createFromDate((int) $this->selectedYear, 1, 1)->toDateString(),
+                \Carbon\Carbon::createFromDate((int) $this->selectedYear, 12, 31)->toDateString(),
+            ],
+            'custom' => [$this->dateFrom ?: $today, $this->dateTo ?: $today],
+            default => [$today, $today],
+        };
+    }
+
+    public function getPeriodLabelProperty(): string
+    {
+        [$from, $to] = $this->periodRange;
+
+        return match ($this->period) {
+            'daily' => \Carbon\Carbon::parse($from)->format('M j, Y'),
+            'monthly' => \Carbon\Carbon::parse($from)->format('F Y'),
+            'yearly' => \Carbon\Carbon::parse($from)->format('Y'),
+            'custom' => \Carbon\Carbon::parse($from)->format('M j, Y').' – '.\Carbon\Carbon::parse($to)->format('M j, Y'),
+            default => 'Today',
+        };
+    }
+
+    public function getNewRegistrationsProperty(): int
+    {
+        [$from, $to] = $this->periodRange;
+
+        return Tenant::query()
+            ->whereBetween('created_at', [
+                \Carbon\Carbon::parse($from)->startOfDay(),
+                \Carbon\Carbon::parse($to)->endOfDay(),
+            ])
+            ->count();
+    }
+
     public function getCountsProperty(): array
     {
         return [
@@ -38,6 +104,51 @@ new #[Layout('layouts.admin')] #[Title('Admin Dashboard')] class extends Compone
     <div>
         <h1 class="text-2xl font-semibold text-ink">Platform Overview</h1>
         <p class="mt-1 text-sm text-muted">Businesses using BizManager.</p>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline bg-surface p-4">
+        <div>
+            <p class="text-xs font-medium uppercase text-muted">New Businesses</p>
+            <p class="mt-1 text-xl font-semibold text-ink">{{ $this->newRegistrations }} <span class="text-sm font-normal text-muted">({{ $this->periodLabel }})</span></p>
+        </div>
+
+        <div class="flex flex-wrap items-end gap-3">
+            <div>
+                <label class="mb-1 block text-xs font-medium text-muted">Period</label>
+                <select wire:model.live="period" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                    <option value="today">Today</option>
+                    <option value="daily">Specific Day</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+            @if ($period === 'daily')
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">Date</label>
+                    <input wire:model.live="selectedDate" type="date" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+            @elseif ($period === 'monthly')
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">Month</label>
+                    <input wire:model.live="selectedMonth" type="month" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+            @elseif ($period === 'yearly')
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">Year</label>
+                    <input wire:model.live="selectedYear" type="number" min="2000" max="{{ now()->year + 1 }}" class="w-24 rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+            @elseif ($period === 'custom')
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">From</label>
+                    <input wire:model.live="dateFrom" type="date" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="mb-1 block text-xs font-medium text-muted">To</label>
+                    <input wire:model.live="dateTo" type="date" class="rounded-lg border border-hairline px-3 py-2 text-sm">
+                </div>
+            @endif
+        </div>
     </div>
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">

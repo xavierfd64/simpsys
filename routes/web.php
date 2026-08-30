@@ -58,4 +58,5 @@ Route::middleware(['auth', 'platform.admin'])->prefix('admin')->name('admin.')->
     Route::livewire('/plans', 'pages::admin.plans.index')->name('plans.index');
     Route::livewire('/promotions', 'pages::admin.promotions.index')->name('promotions.index');
     Route::livewire('/notifications', 'pages::admin.notifications.index')->name('notifications.index');
+    Route::livewire('/settings', 'pages::admin.settings')->name('settings');
 });

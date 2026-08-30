@@ -3,19 +3,27 @@
 use App\Enums\OrderType;
 use App\Models\PaymentMethod;
 use App\Services\TenantContext;
+use App\Support\TenantStorage;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new #[Layout('layouts.app')] #[Title('Business Settings')] class extends Component
 {
+    use WithFileUploads;
+
     public string $tab = 'business';
 
     // Business info
     public string $name = '';
 
     public string $timezone = '';
+
+    public $logo = null;
+
+    public ?string $current_logo_path = null;
 
     // Payment methods
     public bool $showPaymentMethodModal = false;
@@ -40,6 +48,7 @@ new #[Layout('layouts.app')] #[Title('Business Settings')] class extends Compone
         $tenant = $tenantContext->tenant();
         $this->name = $tenant->name;
         $this->timezone = $tenant->timezone;
+        $this->current_logo_path = $tenant->logo_path;
 
         $settings = $tenant->settings;
         $this->order_types_enabled = (bool) $settings?->order_types_enabled;
@@ -58,15 +67,37 @@ new #[Layout('layouts.app')] #[Title('Business Settings')] class extends Compone
     {
         $this->validate([
             'name' => ['required', 'string', 'max:255'],
-            'timezone' => ['required', Rule::in(\DateTimeZone::listIdentifiers())],
+            'timezone' => ['required', Rule::in(DateTimeZone::listIdentifiers())],
+            'logo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ]);
 
-        $tenantContext->tenant()->update([
+        $tenant = $tenantContext->tenant();
+        $attributes = [
             'name' => $this->name,
             'timezone' => $this->timezone,
-        ]);
+        ];
+
+        if ($this->logo) {
+            TenantStorage::delete($tenant->logo_path);
+            $attributes['logo_path'] = TenantStorage::storeImage($this->logo, 'branding', $tenant);
+        }
+
+        $tenant->update($attributes);
+
+        $this->logo = null;
+        $this->current_logo_path = $tenant->logo_path;
 
         session()->flash('status', 'Business information updated.');
+    }
+
+    public function removeLogo(TenantContext $tenantContext): void
+    {
+        $tenant = $tenantContext->tenant();
+        TenantStorage::delete($tenant->logo_path);
+        $tenant->update(['logo_path' => null]);
+
+        $this->current_logo_path = null;
+        session()->flash('status', 'Logo removed.');
     }
 
     public function saveOrderTypeSettings(TenantContext $tenantContext): void
@@ -162,6 +193,31 @@ new #[Layout('layouts.app')] #[Title('Business Settings')] class extends Compone
                         @endforeach
                     </select>
                     @error('timezone') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-ink">Business Logo</label>
+                    <div class="flex items-center gap-4">
+                        <div class="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-hairline bg-app-bg">
+                            @if ($logo)
+                                <img src="{{ $logo->temporaryUrl() }}" class="h-full w-full object-cover" alt="Logo preview">
+                            @elseif ($current_logo_path)
+                                <img src="{{ TenantStorage::url($current_logo_path) }}" class="h-full w-full object-cover" alt="Business logo">
+                            @else
+                                <x-lucide-store class="h-7 w-7 text-muted" />
+                            @endif
+                        </div>
+                        <div class="flex-1">
+                            <input wire:model="logo" type="file" accept="image/*" class="w-full text-sm">
+                            @error('logo') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                            @if ($current_logo_path && ! $logo)
+                                <button type="button" wire:click="removeLogo" wire:confirm="Remove the business logo?"
+                                        class="mt-1 text-xs font-medium text-danger-500 hover:underline">
+                                    Remove logo
+                                </button>
+                            @endif
+                        </div>
+                    </div>
                 </div>
 
                 <button type="submit"

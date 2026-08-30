@@ -329,6 +329,40 @@ shared-hosting-appropriate.
   `storage/app/installed.lock` existing, and is a no-op in the `testing`
   environment specifically so it can't redirect every feature test to
   `/install`.
+- **The installer never ran `storage:link`, so every uploaded image
+  (products, supplies, receipts, tenant/platform logos) 404'd on shared
+  hosting** even though the upload itself succeeded and the DB row was
+  correct — `Storage::disk('public')->url(...)` always resolves to
+  `/storage/...`, which only resolves to `storage/app/public/...` through
+  the symlink Laravel's `storage:link` artisan command creates, and nothing
+  in the WordPress-style install flow ever called it (shared hosting users
+  have no shell access to run it themselves). Fixed by having
+  `InstallerService::migrateAndSeed()` call
+  `Artisan::call('storage:link')` right after migrating, wrapped in its own
+  try/catch (non-fatal — some restrictive hosts disallow `symlink()`
+  entirely, in which case images still won't show, but the rest of the
+  install must not be blocked by it). Confirmed the underlying failure mode
+  first (fresh install, upload a product image, request its URL directly —
+  404) before fixing, then re-confirmed the same request 200s once the link
+  exists.
+- **A `date`-cast Eloquent attribute does not round-trip as a bare
+  `YYYY-MM-DD` string in the database.** `Expense::$casts['expense_date'] =
+  'date'` stores `2026-08-30 00:00:00` (a full datetime with a zeroed time
+  part), not `2026-08-30` — confirmed directly against the dev SQLite DB.
+  `whereBetween('expense_date', [$from, $to])` with plain date strings
+  therefore silently excludes rows even when `$from === $to` equals the
+  stored day, because `'2026-08-30 00:00:00'` sorts after the bare
+  `'2026-08-30'` upper bound as a string. This broke the dashboard's new
+  period-filtered expense totals the same way `whereDate()` (not
+  `whereBetween`) was already correctly being used for by the older Reports
+  page's expense filter (`whereDate('expense_date', '>=', ...)
+  ->whereDate('expense_date', '<=', ...)`). Fixed the dashboard to use the
+  same `whereDate()` pair instead of `whereBetween()`. Caught by writing a
+  regression test first and watching it fail against the `whereBetween`
+  version before switching — the reports page's existing filter was never
+  wrong, only the new dashboard code had briefly copied the pattern that
+  works for timestamp columns (see `Tenant::localRangeBoundsUtc()` above)
+  onto a plain date column, which needs the opposite treatment.
 
 ## Stage progress
 
@@ -437,6 +471,32 @@ Tracking the master instruction's Development Order (section 35):
       to `/install`, requirements step correctly flagged a genuinely missing
       `bcmath` extension in the test environment and blocked continuing,
       and `/install` correctly redirected away once locked.
+- [x] **Post-launch targeted fixes/additions round 1** (production bug
+      reports plus a scoped subset of a larger 13-item request — the
+      multi-branch system, SMTP/transactional email, notice read-tracking,
+      billing statements/reminders, a full automation audit, and the
+      self-service updater were explicitly deferred to a future round):
+      fixed the POS checkout button requiring a scroll on tablet viewports
+      (`100vh` → `100dvh` plus `min-h-0` on the cart panel — the classic iOS
+      Safari dynamic-toolbar viewport bug), redesigned POS product cards to
+      a responsive `aspect-square` layout, fixed uploaded images 404ing in
+      production (see the `storage:link` note above), fixed the dashboard's
+      period-filtered expense totals under-counting (see the `date`-cast
+      `whereBetween` note above), added tenant business branding (logo
+      upload/replace/remove, shown in the sidebar and throughout the app —
+      the DB column already existed from Stage 3, only the settings-page UI
+      was missing), added platform-wide branding (`platform_settings`
+      table/model, new admin Settings page for platform name/logo/favicon/
+      support email/phone, applied across the public site, guest auth
+      pages, tenant app, and admin layouts — the first real use of the
+      Stage 11 note that platform-wide settings had no concrete need yet),
+      and added Today/Specific-Day/Monthly/Yearly/Custom-range period
+      filters to both the tenant and platform admin dashboards (tenant:
+      scopes the sales/expenses/net-income/transactions stat cards and
+      recent-transactions list, leaving the independent 7-day trend chart
+      unaffected; admin: an additive "New Businesses" panel next to the
+      existing status-count cards, which stay unfiltered since they're
+      current-state snapshots, not historical).
 
 ## Demo accounts (seeded, password `password`)
 

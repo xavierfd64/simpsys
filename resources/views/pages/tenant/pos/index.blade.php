@@ -198,7 +198,7 @@ new #[Layout('layouts.app')] #[Title('POS')] class extends Component
     }
 }; ?>
 
-<div class="flex flex-col gap-4 lg:h-[calc(100vh-7rem)] lg:flex-row">
+<div class="flex flex-col gap-4 lg:h-[calc(100dvh-7rem)] lg:flex-row">
     <div class="flex min-w-0 flex-1 flex-col gap-4">
         @if ($lastSaleMessage)
             <div class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">{{ $lastSaleMessage }}</div>
@@ -230,19 +230,19 @@ new #[Layout('layouts.app')] #[Title('POS')] class extends Component
             @forelse ($this->products as $product)
                 <button type="button" wire:click="addToCart({{ $product->id }})"
                         @if ($product->type->value === 'ready_to_sell' && $product->currentStock() <= 0) disabled @endif
-                        class="flex flex-col overflow-hidden rounded-xl border border-hairline bg-surface text-left transition hover:border-primary-300 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
-                    <div class="flex aspect-square items-center justify-center bg-app-bg">
+                        class="flex aspect-square flex-col overflow-hidden rounded-xl border border-hairline bg-surface text-left transition hover:border-primary-300 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                    <div class="flex min-h-0 flex-1 items-center justify-center bg-app-bg">
                         @if ($product->image_path)
                             <img src="{{ TenantStorage::url($product->image_path) }}" class="h-full w-full object-cover" alt="{{ $product->name }}">
                         @else
                             <x-lucide-package class="h-8 w-8 text-muted" />
                         @endif
                     </div>
-                    <div class="p-3">
-                        <p class="truncate text-sm font-medium text-ink">{{ $product->name }}</p>
-                        <p class="text-sm text-primary-600">{{ Money::format($product->selling_price) }}</p>
+                    <div class="shrink-0 border-t border-hairline p-2">
+                        <p class="truncate text-xs font-medium text-ink sm:text-sm">{{ $product->name }}</p>
+                        <p class="text-xs text-primary-600 sm:text-sm">{{ Money::format($product->selling_price) }}</p>
                         @if ($product->type->value === 'ready_to_sell')
-                            <p class="text-xs text-muted">{{ $product->currentStock() }} left</p>
+                            <p class="text-[10px] text-muted sm:text-xs">{{ $product->currentStock() }} left</p>
                         @endif
                     </div>
                 </button>
@@ -252,7 +252,7 @@ new #[Layout('layouts.app')] #[Title('POS')] class extends Component
         </div>
     </div>
 
-    <div class="hidden w-80 shrink-0 flex-col rounded-xl border border-hairline bg-surface lg:flex">
+    <div class="hidden w-80 min-h-0 shrink-0 flex-col rounded-xl border border-hairline bg-surface lg:flex">
         @include('pages.tenant.pos.partials.cart')
     </div>
 

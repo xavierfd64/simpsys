@@ -7,6 +7,7 @@ use App\Enums\TenantStatus;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -24,6 +25,32 @@ class SuperAdminBusinessManagementTest extends TestCase
         $this->actingAs($admin);
 
         Livewire::test('pages::admin.dashboard')->assertSee('3');
+    }
+
+    public function test_admin_dashboard_period_filter_scopes_new_business_registrations(): void
+    {
+        $admin = User::factory()->create(['is_platform_admin' => true]);
+
+        Carbon::setTestNow(now()->subDays(3));
+        Tenant::factory()->create();
+        $threeDaysAgo = now()->toDateString();
+        Carbon::setTestNow();
+
+        Tenant::factory()->create();
+
+        $this->actingAs($admin);
+
+        $test = Livewire::test('pages::admin.dashboard');
+        $this->assertNewBusinessesCount(1, $test->html());
+
+        $test->set('period', 'custom')->set('dateFrom', $threeDaysAgo)->set('dateTo', $threeDaysAgo);
+        $this->assertNewBusinessesCount(1, $test->html());
+    }
+
+    private function assertNewBusinessesCount(int $expected, string $html): void
+    {
+        preg_match('/New Businesses<\/p>\s*<p[^>]*>(\d+)/', $html, $matches);
+        $this->assertSame($expected, (int) ($matches[1] ?? -1));
     }
 
     public function test_suspending_a_business_blocks_its_owner_from_logging_in(): void

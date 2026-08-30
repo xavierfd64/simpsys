@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -38,6 +39,39 @@ class ExpenseManagementTest extends TestCase
             'description' => 'Cooking gas refill',
             'recorded_by' => $owner->id,
         ]);
+    }
+
+    /**
+     * 2:00 AM Manila time (UTC+8) on Sept 1 is still 6:00 PM Aug 31 in UTC.
+     * openCreate() used to default expense_date to bare now()->toDateString()
+     * — the server's UTC "today" — so an expense recorded at that hour got
+     * dated Aug 31 while the page's own default date filter (computed
+     * correctly with the tenant's timezone) starts at Sept 1: the expense
+     * saved successfully but fell outside the visible range, reading as
+     * "recorded but not showing up."
+     */
+    public function test_new_expense_defaults_to_the_tenant_local_date_not_utc(): void
+    {
+        // setTestNow() takes a UTC instant, not tenant-local time — 18:00
+        // UTC on Aug 31 is 02:00 the *next* day in Asia/Manila.
+        Carbon::setTestNow('2026-08-31 18:00:00');
+
+        $tenant = Tenant::factory()->create(['timezone' => 'Asia/Manila']);
+        $owner = User::factory()->create();
+        $membership = $tenant->memberships()->create(['user_id' => $owner->id, 'role' => TenantMembershipRole::Owner]);
+
+        $this->actingAs($owner);
+        app(TenantContext::class)->setMembership($membership);
+
+        Livewire::test('pages::tenant.expenses.index')
+            ->call('openCreate')
+            ->assertSet('expense_date', '2026-09-01')
+            ->set('amount', '500.00')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSee('₱500.00');
+
+        Carbon::setTestNow();
     }
 
     public function test_expenses_are_scoped_to_the_current_tenant(): void

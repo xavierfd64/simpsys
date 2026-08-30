@@ -82,7 +82,8 @@ new #[Layout('layouts.app')] #[Title('Expenses')] class extends Component
     public function openCreate(): void
     {
         $this->reset(['editingId', 'expense_category_id', 'amount', 'payment_method_id', 'description', 'notes', 'receipt']);
-        $this->expense_date = now()->toDateString();
+        $tenant = app(TenantContext::class)->tenant();
+        $this->expense_date = now($tenant->timezone)->toDateString();
         $this->showFormModal = true;
     }
 
@@ -117,7 +118,7 @@ new #[Layout('layouts.app')] #[Title('Expenses')] class extends Component
 
         $attributes = [
             'expense_category_id' => $data['expense_category_id'] ?: null,
-            'amount' => \App\Support\Money::toCents($data['amount']),
+            'amount' => Money::toCents($data['amount']),
             'expense_date' => $data['expense_date'],
             'payment_method_id' => $data['payment_method_id'] ?: null,
             'description' => $data['description'] ?: null,

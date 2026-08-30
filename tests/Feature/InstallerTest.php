@@ -80,6 +80,36 @@ class InstallerTest extends TestCase
         $this->assertStringNotContainsString('Uncaught', $output);
     }
 
+    /**
+     * public/storage only exists in local dev because `storage:link` was
+     * run once, manually, during initial project setup — the installer
+     * itself never called it, so every uploaded image (product photos,
+     * receipts, tenant logos) would silently 404 on a fresh shared-hosting
+     * install: the upload and database write both succeed, but the URL
+     * Laravel generates never resolves to a real file. Removes the real
+     * symlink and confirms migrateAndSeed() recreates it, then restores it
+     * so this test doesn't leave the dev environment link missing.
+     */
+    public function test_migrate_and_seed_creates_the_public_storage_link(): void
+    {
+        $link = public_path('storage');
+        $existed = file_exists($link);
+
+        if ($existed) {
+            unlink($link);
+        }
+
+        $this->assertFalse(file_exists($link));
+
+        app(InstallerService::class)->migrateAndSeed();
+
+        $this->assertTrue(file_exists($link), 'storage:link was not run during install.');
+
+        if (! $existed) {
+            unlink($link);
+        }
+    }
+
     public function test_env_editor_updates_existing_keys_and_appends_missing_ones(): void
     {
         $path = tempnam(sys_get_temp_dir(), 'env');

@@ -27,6 +27,18 @@ class TenantStorage
         return $file->storeAs($path, $filename, 'public');
     }
 
+    /**
+     * Same pattern as storeImage(), for platform-wide (non-tenant) uploads
+     * like platform branding — stored under platform/{folder}/ instead of
+     * a per-tenant path.
+     */
+    public static function storePlatformImage(UploadedFile $file, string $folder): string
+    {
+        $filename = Str::uuid().'.'.$file->getClientOriginalExtension();
+
+        return $file->storeAs("platform/{$folder}", $filename, 'public');
+    }
+
     public static function delete(?string $path): void
     {
         if ($path) {

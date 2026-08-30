@@ -7,6 +7,8 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -34,6 +36,35 @@ class BusinessSettingsTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertSame('New Business Name', $tenant->fresh()->name);
+    }
+
+    public function test_owner_can_upload_and_remove_a_business_logo(): void
+    {
+        Storage::fake('public');
+
+        $tenant = Tenant::factory()->create();
+        $owner = User::factory()->create();
+        $membership = $tenant->memberships()->create(['user_id' => $owner->id, 'role' => TenantMembershipRole::Owner]);
+
+        $this->actingAs($owner);
+        app(TenantContext::class)->setMembership($membership);
+
+        Livewire::test('pages::tenant.settings')
+            ->set('name', $tenant->name)
+            ->set('timezone', $tenant->timezone)
+            ->set('logo', UploadedFile::fake()->image('logo.png'))
+            ->call('saveBusinessInfo')
+            ->assertHasNoErrors();
+
+        $tenant->refresh();
+        $this->assertNotNull($tenant->logo_path);
+        Storage::disk('public')->assertExists($tenant->logo_path);
+
+        Livewire::test('pages::tenant.settings')
+            ->call('removeLogo')
+            ->assertHasNoErrors();
+
+        $this->assertNull($tenant->fresh()->logo_path);
     }
 
     public function test_cashier_cannot_reach_business_settings(): void
