@@ -6,6 +6,7 @@
         ['route' => 'admin.plans.index', 'match' => 'admin.plans.*', 'label' => 'Plans', 'icon' => 'tag'],
         ['route' => 'admin.promotions.index', 'match' => 'admin.promotions.*', 'label' => 'Promotions', 'icon' => 'percent'],
         ['route' => 'admin.notifications.index', 'match' => 'admin.notifications.*', 'label' => 'Notifications', 'icon' => 'bell'],
+        ['route' => 'admin.branches.index', 'match' => 'admin.branches.*', 'label' => 'Branches', 'icon' => 'building-2'],
         ['route' => 'admin.settings', 'match' => 'admin.settings', 'label' => 'Settings', 'icon' => 'settings'],
     ];
     $adminNavItems = array_filter($adminNavItems, fn ($item) => Route::has($item['route']));

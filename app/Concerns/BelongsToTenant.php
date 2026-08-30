@@ -3,7 +3,9 @@
 namespace App\Concerns;
 
 use App\Models\Scopes\TenantScope;
+use App\Models\Tenant;
 use App\Services\TenantContext;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Defense-in-depth for tenant isolation: every query against a model using
@@ -29,5 +31,26 @@ trait BelongsToTenant
                 }
             }
         });
+    }
+
+    /**
+     * Explicit, opt-in escape hatch for legitimate cross-branch access
+     * (creating a resource for a branch other than the current session's
+     * active one, or an owner's multi-branch dashboard aggregating several
+     * branches at once) — bypasses the current-tenant global scope for
+     * this query only, in favor of the given tenant(s). Everywhere else
+     * keeps going through the normal scoped query as before.
+     */
+    public static function forTenant(Tenant $tenant): Builder
+    {
+        return static::query()->withoutGlobalScope(TenantScope::class)->where('tenant_id', $tenant->id);
+    }
+
+    /**
+     * @param  iterable<int>  $tenantIds
+     */
+    public static function forTenants(iterable $tenantIds): Builder
+    {
+        return static::query()->withoutGlobalScope(TenantScope::class)->whereIn('tenant_id', $tenantIds);
     }
 }

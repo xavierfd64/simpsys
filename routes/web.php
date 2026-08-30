@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\SwitchBranchController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -46,8 +47,13 @@ Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(functi
         Route::livewire('/supplies', 'pages::tenant.supplies.index')->name('supplies.index');
         Route::livewire('/expenses', 'pages::tenant.expenses.index')->name('expenses.index');
         Route::livewire('/users', 'pages::tenant.users.index')->name('users.index');
+        Route::livewire('/branches', 'pages::tenant.branches.index')->name('branches.index');
     });
 });
+
+Route::post('/switch-branch', SwitchBranchController::class)
+    ->middleware('auth')
+    ->name('switch-branch');
 
 Route::middleware(['auth', 'platform.admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::livewire('/dashboard', 'pages::admin.dashboard')->name('dashboard');
@@ -58,5 +64,6 @@ Route::middleware(['auth', 'platform.admin'])->prefix('admin')->name('admin.')->
     Route::livewire('/plans', 'pages::admin.plans.index')->name('plans.index');
     Route::livewire('/promotions', 'pages::admin.promotions.index')->name('promotions.index');
     Route::livewire('/notifications', 'pages::admin.notifications.index')->name('notifications.index');
+    Route::livewire('/branches', 'pages::admin.branches.index')->name('branches.index');
     Route::livewire('/settings', 'pages::admin.settings')->name('settings');
 });

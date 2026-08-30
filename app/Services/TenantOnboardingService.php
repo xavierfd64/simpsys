@@ -10,7 +10,6 @@ use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class TenantOnboardingService
 {
@@ -28,7 +27,7 @@ class TenantOnboardingService
 
             $tenant = Tenant::create([
                 'name' => $businessName,
-                'slug' => $this->uniqueSlug($businessName),
+                'slug' => Tenant::uniqueSlug($businessName),
                 'timezone' => 'Asia/Manila',
                 'status' => TenantStatus::Trial,
                 'trial_ends_at' => $trialEndsAt,
@@ -70,19 +69,5 @@ class TenantOnboardingService
 
             return $tenant;
         });
-    }
-
-    protected function uniqueSlug(string $name): string
-    {
-        $base = Str::slug($name) ?: 'business';
-        $slug = $base;
-        $suffix = 1;
-
-        while (Tenant::query()->withTrashed()->where('slug', $slug)->exists()) {
-            $slug = "{$base}-{$suffix}";
-            $suffix++;
-        }
-
-        return $slug;
     }
 }

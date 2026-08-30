@@ -15,11 +15,13 @@
         ['route' => 'app.expenses.index', 'match' => 'app.expenses.*', 'label' => 'Expenses', 'icon' => 'credit-card', 'roles' => [Role::Owner]],
         ['route' => 'app.reports', 'match' => 'app.reports*', 'label' => 'Reports', 'icon' => 'bar-chart', 'roles' => [Role::Owner]],
         ['route' => 'app.users.index', 'match' => 'app.users.*', 'label' => 'Users', 'icon' => 'users', 'roles' => [Role::Owner]],
+        ['route' => 'app.branches.index', 'match' => 'app.branches.*', 'label' => 'Branches', 'icon' => 'building-2', 'roles' => [Role::Owner]],
         ['route' => 'app.settings', 'match' => 'app.settings*', 'label' => 'Settings', 'icon' => 'settings', 'roles' => [Role::Owner]],
     ];
 
     $kitchenEnabled = $tenant?->settings?->kitchen_enabled ?? true;
     $platform = \App\Models\PlatformSetting::current();
+    $usableMemberships = auth()->user()?->usableMemberships() ?? collect();
 
     $visibleNavItems = array_filter($navItems, function ($item) use ($role, $kitchenEnabled) {
         if (! in_array($role, $item['roles'], true) || ! Route::has($item['route'])) {
@@ -96,7 +98,21 @@
                 </button>
 
                 <div class="text-sm font-medium text-muted">
-                    {{ $tenant?->name }}
+                    @if ($usableMemberships->count() > 1)
+                        <form method="POST" action="{{ route('switch-branch') }}">
+                            @csrf
+                            <select name="tenant_id" onchange="this.form.submit()"
+                                    class="rounded-lg border border-hairline bg-surface px-2 py-1 text-sm font-medium text-ink">
+                                @foreach ($usableMemberships as $membership)
+                                    <option value="{{ $membership->tenant_id }}" @selected($membership->tenant_id === $tenant?->id)>
+                                        {{ $membership->tenant->name }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </form>
+                    @else
+                        {{ $tenant?->name }}
+                    @endif
                 </div>
 
                 <div class="flex items-center gap-3">

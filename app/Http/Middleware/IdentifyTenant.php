@@ -23,7 +23,8 @@ class IdentifyTenant
     {
         $user = $request->user();
 
-        $membership = $user?->activeMembership();
+        $preferredTenantId = $request->session()->get('current_tenant_id');
+        $membership = $user?->activeMembership($preferredTenantId);
 
         if (! $membership) {
             $suspendedMembership = $user?->memberships()
@@ -34,8 +35,22 @@ class IdentifyTenant
                 abort(403, 'This business account has been suspended. Please contact support.');
             }
 
+            $pendingBranch = $user?->memberships()
+                ->whereHas('tenant', fn ($q) => $q->where('branch_status', 'pending_approval'))
+                ->first();
+
+            if ($pendingBranch && $user->memberships()->count() === 1) {
+                abort(403, 'This branch is pending Platform Admin approval.');
+            }
+
             abort(403, 'No active business was found for this account.');
         }
+
+        // Keep the session's "current branch" in sync with what actually
+        // resolved (e.g. a stale/invalid session value falls back to the
+        // first usable membership above — remember that choice instead of
+        // re-resolving it on every request).
+        $request->session()->put('current_tenant_id', $membership->tenant_id);
 
         $this->tenantContext->setMembership($membership);
 

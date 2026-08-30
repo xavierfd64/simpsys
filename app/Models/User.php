@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Collection;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'remember_token'])]
@@ -40,13 +41,43 @@ class User extends Authenticatable
         return $this->hasMany(TenantMembership::class);
     }
 
-    public function activeMembership(): ?TenantMembership
+    /**
+     * Every membership on a tenant this user can currently log into and
+     * operate — i.e. Tenant::isOperational() — ordered by tenant id so the
+     * business's root tenant (created first) is the default choice.
+     *
+     * @return Collection<int, TenantMembership>
+     */
+    public function usableMemberships(): Collection
     {
         return $this->memberships()
-            ->with('tenant')
+            ->with('tenant.parent')
             ->where('status', 'active')
-            ->whereHas('tenant', fn ($query) => $query->whereNotIn('status', ['cancelled', 'suspended']))
-            ->first();
+            ->get()
+            ->filter(fn ($membership) => $membership->tenant?->isOperational())
+            ->sortBy('tenant_id')
+            ->values();
+    }
+
+    /**
+     * The membership to use for this request. When a user belongs to more
+     * than one branch, $preferredTenantId (the session-remembered "current
+     * branch") is honored if it's still valid; otherwise falls back to the
+     * first usable membership.
+     */
+    public function activeMembership(?int $preferredTenantId = null): ?TenantMembership
+    {
+        $memberships = $this->usableMemberships();
+
+        if ($preferredTenantId) {
+            $preferred = $memberships->firstWhere('tenant_id', $preferredTenantId);
+
+            if ($preferred) {
+                return $preferred;
+            }
+        }
+
+        return $memberships->first();
     }
 
     /**
