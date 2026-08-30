@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsurePlatformAdmin;
 use App\Http\Middleware\EnsureTenantRole;
 use App\Http\Middleware\IdentifyTenant;
 use App\Services\TenantContext;
+use App\Support\MailConfigurator;
 use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
@@ -56,5 +57,10 @@ class AppServiceProvider extends ServiceProvider
 
             return $user ? route($user->homeRouteName()) : route('home');
         });
+
+        // Lets the Platform Admin configure SMTP from the UI (no .env edit,
+        // no server restart) — same "hot-swap runtime config" pattern the
+        // installer already uses for the database connection.
+        MailConfigurator::applyFromDatabase();
     }
 }
