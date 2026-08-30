@@ -8,6 +8,7 @@
         ['route' => 'admin.notifications.index', 'match' => 'admin.notifications.*', 'label' => 'Notifications', 'icon' => 'bell'],
         ['route' => 'admin.branches.index', 'match' => 'admin.branches.*', 'label' => 'Branches', 'icon' => 'building-2'],
         ['route' => 'admin.settings', 'match' => 'admin.settings', 'label' => 'Settings', 'icon' => 'settings'],
+        ['route' => 'admin.updates.index', 'match' => 'admin.updates.*', 'label' => 'Updates', 'icon' => 'download'],
     ];
     $adminNavItems = array_filter($adminNavItems, fn ($item) => Route::has($item['route']));
 @endphp

@@ -471,6 +471,72 @@ anyway. Findings:
   `MustVerifyEmail`-gated flow to automate, so this is N/A rather than a
   gap, matching the spec's own "if applicable" framing.
 
+## Self-service platform updater
+
+`App\Services\PlatformUpdateService` applies an "official update package"
+(ZIP; format documented in `docs/UPDATE_PACKAGE_FORMAT.md`) from the
+Platform Admin UI (`/admin/updates`) with no shell/SSH/Composer access
+needed — matching the installer's own philosophy. A root-level `VERSION`
+file (plain text, e.g. `1.0.0`) tracks the installed version; a package's
+manifest must declare a strictly newer `version` (checked with
+`version_compare()`) and, if it sets `min_from_version`, the installation
+must already be at or past that floor.
+
+- **The upload itself deliberately bypasses Livewire's file upload.**
+  Livewire's temporary-upload endpoint enforces a global 12MB ceiling
+  (`config('livewire.temporary_file_upload.rules')`) shared by every
+  upload in the app (product photos, receipts, logos, this); an update
+  package carries the full application including `vendor/` (tens of MB,
+  matching the release zip's own already-`composer install`-run payload)
+  and would routinely exceed that. `PlatformUpdateUploadController` is a
+  plain Laravel route handling a normal multipart POST instead — bounded
+  only by PHP's own `upload_max_filesize`/`post_max_size`, and it never
+  touches the shared Livewire config that every other upload also relies
+  on. The Livewire page picks the upload back up afterward via a
+  session-stored `pending_update` (path + parsed manifest) for the
+  review/confirm/cancel step.
+- **Backups use `rename()`, not copy-then-delete.** Before a package
+  overwrites an existing file, that file is moved into
+  `storage/app/update-backups/{timestamp}/{same relative path}` — a
+  same-filesystem rename is a single directory-entry swap regardless of
+  file size, versus a full read-and-rewrite a copy would need, which
+  matters for a payload this large under shared hosting's typical
+  execution-time limits. A newly-created file (nothing to back up) is
+  just tracked so rollback knows to delete it if something later fails.
+- **Path-traversal and protected-path checks are enforced in code, not
+  left to convention.** Every ZIP entry name is checked for `..`, a
+  leading `/`, or a Windows drive prefix before anything is extracted —
+  defense in depth on top of `ZipArchive::extractTo()`'s own protection.
+  Separately, `PlatformUpdateService::PROTECTED_PREFIXES` (`.env`,
+  `storage/`, `public/storage`, `bootstrap/cache/`,
+  `database/database.sqlite`) is checked against every single file the
+  package tries to write, and an existing file under
+  `database/migrations/` is never overwritten (a fix belongs in a new
+  migration, never an edit to one that may have already run) — both
+  verified with tests that deliberately remove the guard first and watch
+  the test fail before restoring it, the same stash-and-verify discipline
+  used throughout this project.
+- **Rollback is file-by-file, not a single directory swap.** On any
+  exception during file application, migration, or cache-clearing, every
+  already-backed-up file is restored and every newly-created file is
+  deleted, in reverse order. The one thing this cannot undo automatically
+  is a partially-run migration batch (Laravel has no generally-safe
+  auto-down-migration story) — the failure message says so explicitly and
+  directs the admin to check the database before retrying, rather than
+  silently claiming a cleaner rollback than actually happened.
+- **Tests for the service run against a fully isolated fake "app root,"
+  never the real project directory.** `PlatformUpdateService` takes an
+  optional `$basePath` constructor argument (defaulting to `base_path()`)
+  specifically so `PlatformUpdateServiceTest` can point it at a throwaway
+  `storage/framework/testing/update-sandbox/{uuid}` directory instead —
+  install/rollback logic is real filesystem behavior, not mocked, but
+  never risks touching this session's own working tree. The upload
+  *controller* tests, by contrast, necessarily exercise the real
+  `base_path()` (the controller has no seam to inject a fake one) but only
+  ever call `readManifest()`/`validateManifest()` (read-only) — they
+  never call `install()`, and they save/restore the repo's real `VERSION`
+  file in `setUp()`/`tearDown()` so a test run can't leave it altered.
+
 ## Stage progress
 
 Tracking the master instruction's Development Order (section 35):
@@ -604,6 +670,40 @@ Tracking the master instruction's Development Order (section 35):
       unaffected; admin: an additive "New Businesses" panel next to the
       existing status-count cards, which stay unfiltered since they're
       current-state snapshots, not historical).
+- [x] **Post-launch targeted fixes/additions round 2** (the six items
+      explicitly deferred out of round 1): SMTP settings with a runtime
+      config hot-swap and a Send Test Email action (see the
+      `MailConfigurator`/`SafeMailer` notes above); a full multi-branch
+      business system (branches modeled as another `Tenant` row via
+      `parent_tenant_id`, a Platform Admin approval workflow, a branch
+      switcher, and cross-branch data isolation reusing the existing
+      `BelongsToTenant` machinery with zero changes to any tenant-scoped
+      feature); an owner multi-branch dashboard (branch filter, period
+      filter, a "Branch Performance" comparison table, best/worst
+      flagged, all additive and invisible to a single-branch tenant);
+      notice system improvements (edit-in-place rather than duplicating,
+      publish/unpublish/expire, per-business read tracking); automated
+      account/branch/billing emails (welcome, branded password reset,
+      suspend/reactivate, branch submitted/approved/rejected, billing
+      reminder, payment received/overdue) all routed through a new
+      `SafeMailer` so an SMTP failure never breaks the triggering
+      transaction; a printable/emailable billing statement (shared
+      between an owner-facing `/app/billing` page and the existing admin
+      business-detail page so the numbers can never drift between them)
+      plus a shared-hosting-friendly `OpportunisticScheduler` that
+      auto-expires lapsed subscriptions and sends renewal reminders by
+      piggybacking on ordinary web traffic instead of needing a system
+      cron job; an automation audit pass that found and closed two real
+      gaps (the trial-to-expired auto-transition, and the owner having no
+      in-app visibility of their own subscription status) while
+      confirming several already-manual steps are intentional, not
+      oversights; and a self-service platform updater
+      (`PlatformUpdateService`, documented in full in the "Self-service
+      platform updater" section above and `docs/UPDATE_PACKAGE_FORMAT.md`)
+      that validates an uploaded ZIP update package, backs up and applies
+      its files with path-traversal and protected-path guards, runs
+      migrations, and rolls back on failure — no shell/SSH/Composer access
+      needed, matching the installer's own philosophy.
 
 ## Demo accounts (seeded, password `password`)
 

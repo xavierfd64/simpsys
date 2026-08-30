@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\PlatformUpdateUploadController;
 use App\Http\Controllers\SwitchBranchController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -68,4 +69,7 @@ Route::middleware(['auth', 'platform.admin'])->prefix('admin')->name('admin.')->
     Route::livewire('/notifications', 'pages::admin.notifications.index')->name('notifications.index');
     Route::livewire('/branches', 'pages::admin.branches.index')->name('branches.index');
     Route::livewire('/settings', 'pages::admin.settings')->name('settings');
+
+    Route::livewire('/updates', 'pages::admin.updates.index')->name('updates.index');
+    Route::post('/updates/upload', PlatformUpdateUploadController::class)->name('updates.upload');
 });
