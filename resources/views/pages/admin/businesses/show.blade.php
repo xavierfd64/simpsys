@@ -2,10 +2,13 @@
 
 use App\Enums\SubscriptionStatus;
 use App\Enums\TenantStatus;
+use App\Mail\AccountReactivatedMail;
+use App\Mail\AccountSuspendedMail;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Services\SubscriptionService;
 use App\Support\Money;
+use App\Support\SafeMailer;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -67,6 +70,7 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
     public function suspendBusiness(): void
     {
         $this->business->update(['status' => TenantStatus::Suspended]);
+        SafeMailer::send($this->owner?->email, new AccountSuspendedMail($this->business));
         $this->refreshTenant();
         session()->flash('status', 'Business suspended.');
     }
@@ -74,6 +78,7 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
     public function reactivateBusiness(): void
     {
         $this->business->update(['status' => TenantStatus::Active]);
+        SafeMailer::send($this->owner?->email, new AccountReactivatedMail($this->business));
         $this->refreshTenant();
         session()->flash('status', 'Business reactivated.');
     }

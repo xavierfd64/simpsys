@@ -6,9 +6,11 @@ use App\Enums\BillingPeriod;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TenantMembershipRole;
 use App\Enums\TenantStatus;
+use App\Mail\WelcomeMail;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\SafeMailer;
 use Illuminate\Support\Facades\DB;
 
 class TenantOnboardingService
@@ -22,7 +24,7 @@ class TenantOnboardingService
      */
     public function register(string $businessName, string $ownerName, string $email, string $password, ?SubscriptionPlan $plan = null): Tenant
     {
-        return DB::transaction(function () use ($businessName, $ownerName, $email, $password, $plan) {
+        $tenant = DB::transaction(function () use ($businessName, $ownerName, $email, $password, $plan) {
             $trialEndsAt = now()->addDays(self::TRIAL_DAYS);
 
             $tenant = Tenant::create([
@@ -69,5 +71,9 @@ class TenantOnboardingService
 
             return $tenant;
         });
+
+        SafeMailer::send($email, new WelcomeMail($tenant, $ownerName));
+
+        return $tenant;
     }
 }

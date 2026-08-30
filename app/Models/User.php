@@ -5,6 +5,8 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Concerns\HasUuid;
 use App\Enums\TenantMembershipRole;
+use App\Mail\PasswordResetMail;
+use App\Support\SafeMailer;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -39,6 +41,19 @@ class User extends Authenticatable
     public function memberships(): HasMany
     {
         return $this->hasMany(TenantMembership::class);
+    }
+
+    /**
+     * Sends our own platform-branded reset email via SafeMailer instead of
+     * Laravel's default Notification (which would use its generic
+     * unbranded template and, being a Notification rather than a Mailable,
+     * bypass SafeMailer's swallow-and-report-on-failure behavior).
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        $url = route('password.reset', ['token' => $token, 'email' => $this->email]);
+
+        SafeMailer::send($this->email, new PasswordResetMail($url));
     }
 
     /**
