@@ -363,6 +363,59 @@ shared-hosting-appropriate.
   wrong, only the new dashboard code had briefly copied the pattern that
   works for timestamp columns (see `Tenant::localRangeBoundsUtc()` above)
   onto a plain date column, which needs the opposite treatment.
+- **A branch is modeled as another `Tenant` row, not a new top-level
+  entity.** `tenants.parent_tenant_id` links a branch to its business's
+  root tenant; `Tenant::isBranch()`/`businessRoot()`/`allBranches()` and a
+  `branch_status` lifecycle (pending_approval/active/rejected/suspended,
+  kept separate from the root's own `status`/subscription) are the only
+  new concepts. Every existing tenant-scoped feature (products, POS,
+  inventory, sales, expenses, kitchen, per-tenant user management)
+  isolates branch data automatically through the existing
+  `BelongsToTenant`/`TenantContext` machinery, with zero changes to any of
+  that code — this is what made the whole feature tractable without a
+  parallel data model. `User::activeMembership()` now takes an optional
+  preferred tenant id (the session's `current_tenant_id`) so a user
+  belonging to several branches can switch between them; a business
+  suspension cascades to its branches via `Tenant::isOperational()`
+  checking the parent's status too, not just the branch's own.
+- **`BelongsToTenant::forTenant()`/`forTenants()` is the sanctioned escape
+  hatch for legitimate cross-branch queries** — creating/reading a
+  resource for a branch other than the current session's active one (e.g.
+  `BranchService` provisioning a new branch's payment methods), or the
+  owner multi-branch dashboard aggregating sales/expenses across several
+  branches at once. Discovered the hard way: `$branch->paymentMethods()
+  ->count()` right after creating a branch came back 0 in a test, because
+  the *global* tenant scope was still filtering on the session's currently
+  active tenant (the root), not the branch just created — the relation's
+  own FK constraint doesn't override the global scope on a `SELECT`, only
+  on the `INSERT`. `forTenant()`/`forTenants()` bypass the scope
+  explicitly and only where a call site asks for it; the default scoped
+  behavior is completely unchanged everywhere else.
+- **No system cron job on shared hosting, so daily billing-reminder/
+  auto-expiry work piggybacks on ordinary web traffic instead.**
+  `App\Support\OpportunisticScheduler::runDaily($key, $callback)` — called
+  unconditionally from `AppServiceProvider::boot()`, skipped in the
+  `testing` environment — checks one cache key and runs `$callback` at
+  most once per calendar day, on whichever real request happens to be the
+  first one that day (the same philosophy as WordPress's `wp-cron.php`).
+  This is what actually fires `BillingReminderService::sendDueReminders()`
+  (7 days before a subscription's `current_period_end`, tracked via
+  `last_reminder_period_end` so a renewal — which moves `current_period_end`
+  forward — automatically makes the subscription eligible for a fresh
+  reminder next cycle without any explicit reset) and
+  `expireLapsedSubscriptions()` (auto-transitions a subscription whose
+  period has already passed to Expired). Deliberately date-only: expiring
+  on a passed due date is a fact about time, not a claim about payment, so
+  it needs no gateway confirmation — the "don't trust unverified payment
+  claims" rule this project follows elsewhere doesn't apply here.
+- **`BillingPayment.paid_at` is a `date` cast, so the same
+  `whereBetween`-with-bare-date-strings bug documented above for
+  `Expense.expense_date` applies to it too.** `BillingStatement::for()`
+  computes "payments made in this billing period" with paired
+  `whereDate('paid_at', '>=', ...)`/`whereDate('paid_at', '<=', ...)`
+  calls, not `whereBetween()` — caught by writing the CLAUDE.md note above
+  first and applying the same fix proactively rather than rediscovering it
+  the same way a second time.
 
 ## Stage progress
 

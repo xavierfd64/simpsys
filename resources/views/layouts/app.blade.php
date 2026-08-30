@@ -16,6 +16,7 @@
         ['route' => 'app.reports', 'match' => 'app.reports*', 'label' => 'Reports', 'icon' => 'bar-chart', 'roles' => [Role::Owner]],
         ['route' => 'app.users.index', 'match' => 'app.users.*', 'label' => 'Users', 'icon' => 'users', 'roles' => [Role::Owner]],
         ['route' => 'app.branches.index', 'match' => 'app.branches.*', 'label' => 'Branches', 'icon' => 'building-2', 'roles' => [Role::Owner]],
+        ['route' => 'app.billing', 'match' => 'app.billing', 'label' => 'Billing', 'icon' => 'file-text', 'roles' => [Role::Owner]],
         ['route' => 'app.settings', 'match' => 'app.settings*', 'label' => 'Settings', 'icon' => 'settings', 'roles' => [Role::Owner]],
     ];
 
@@ -55,7 +56,7 @@
 </head>
 <body class="min-h-screen bg-app-bg font-sans text-ink" x-data="{ mobileNavOpen: false }">
     <div class="flex min-h-screen">
-        <aside class="hidden w-64 shrink-0 flex-col border-r border-hairline bg-surface lg:flex">
+        <aside class="hidden w-64 shrink-0 flex-col border-r border-hairline bg-surface lg:flex print:hidden">
             <div class="flex h-16 items-center gap-2 border-b border-hairline px-5 text-lg font-semibold">
                 @if ($tenant?->logo_path)
                     <img src="{{ \App\Support\TenantStorage::url($tenant->logo_path) }}" class="h-7 w-7 shrink-0 rounded object-cover" alt="{{ $tenant->name }}">
@@ -92,7 +93,7 @@
         </aside>
 
         <div class="flex min-w-0 flex-1 flex-col">
-            <header class="flex h-16 items-center justify-between border-b border-hairline bg-surface px-4 lg:px-6">
+            <header class="flex h-16 items-center justify-between border-b border-hairline bg-surface px-4 lg:px-6 print:hidden">
                 <button type="button" class="text-muted lg:hidden" @click="mobileNavOpen = true">
                     <x-lucide-menu class="h-6 w-6" />
                 </button>
@@ -149,7 +150,7 @@
             </aside>
         </div>
 
-        <nav class="fixed inset-x-0 bottom-0 z-30 flex border-t border-hairline bg-surface lg:hidden">
+        <nav class="fixed inset-x-0 bottom-0 z-30 flex border-t border-hairline bg-surface lg:hidden print:hidden">
             @foreach (array_slice($visibleNavItems, 0, 4) as $item)
                 <a href="{{ Route::has($item['route']) ? route($item['route']) : '#' }}"
                    class="flex flex-1 flex-col items-center gap-1 py-2 text-xs font-medium text-muted">

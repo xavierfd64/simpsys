@@ -217,9 +217,12 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
     <div class="rounded-xl border border-hairline bg-surface p-6">
         <div class="flex items-center justify-between">
             <h3 class="text-sm font-medium text-muted">Subscription</h3>
-            @if ($this->subscription)
-                <span class="rounded-full px-2.5 py-1 text-xs font-medium {{ $this->subscription->status->badgeClasses() }}">{{ $this->subscription->status->label() }}</span>
-            @endif
+            <div class="flex items-center gap-2">
+                @if ($this->subscription)
+                    <span class="rounded-full px-2.5 py-1 text-xs font-medium {{ $this->subscription->status->badgeClasses() }}">{{ $this->subscription->status->label() }}</span>
+                    <a href="{{ route('admin.businesses.statement', $business) }}" class="text-xs font-medium text-primary-600 hover:text-primary-700">View Statement</a>
+                @endif
+            </div>
         </div>
 
         @if ($this->subscription)

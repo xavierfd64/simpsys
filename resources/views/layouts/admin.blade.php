@@ -29,7 +29,7 @@
 </head>
 <body class="min-h-screen bg-app-bg font-sans text-ink">
     <div class="flex min-h-screen">
-        <aside class="hidden w-64 shrink-0 flex-col bg-ink text-slate-200 lg:flex">
+        <aside class="hidden w-64 shrink-0 flex-col bg-ink text-slate-200 lg:flex print:hidden">
             <div class="flex h-16 items-center gap-2 border-b border-white/10 px-5 text-lg font-semibold text-white">
                 @if ($platform->logo_path)
                     <img src="{{ \App\Support\TenantStorage::url($platform->logo_path) }}" class="h-6 w-6 shrink-0 rounded object-cover" alt="{{ $platform->displayName() }}">
@@ -63,7 +63,7 @@
         </aside>
 
         <div class="flex min-w-0 flex-1 flex-col">
-            <header class="flex h-16 items-center justify-between border-b border-hairline bg-surface px-4 lg:px-6">
+            <header class="flex h-16 items-center justify-between border-b border-hairline bg-surface px-4 lg:px-6 print:hidden">
                 <div class="text-sm font-medium text-muted">Platform Administration</div>
 
                 <div class="flex items-center gap-3">

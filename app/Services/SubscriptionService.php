@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Enums\SubscriptionStatus;
+use App\Mail\PaymentReceivedMail;
 use App\Models\BillingPayment;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Support\SafeMailer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -80,7 +82,7 @@ class SubscriptionService
         ?string $notes,
         ?User $admin,
     ): BillingPayment {
-        return DB::transaction(function () use ($subscription, $amount, $paymentMethodLabel, $reference, $notes, $admin) {
+        $payment = DB::transaction(function () use ($subscription, $amount, $paymentMethodLabel, $reference, $notes, $admin) {
             $payment = BillingPayment::create([
                 'tenant_id' => $subscription->tenant_id,
                 'subscription_id' => $subscription->id,
@@ -96,6 +98,11 @@ class SubscriptionService
 
             return $payment;
         });
+
+        $owner = $subscription->tenant->owner()?->user;
+        SafeMailer::send($owner?->email, new PaymentReceivedMail($payment));
+
+        return $payment;
     }
 
     protected function periodEnd(Subscription $subscription): Carbon

@@ -5,13 +5,16 @@ namespace App\Providers;
 use App\Http\Middleware\EnsurePlatformAdmin;
 use App\Http\Middleware\EnsureTenantRole;
 use App\Http\Middleware\IdentifyTenant;
+use App\Services\BillingReminderService;
 use App\Services\TenantContext;
 use App\Support\MailConfigurator;
+use App\Support\OpportunisticScheduler;
 use Illuminate\Auth\Middleware\RedirectIfAuthenticated;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
+use Throwable;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -62,5 +65,24 @@ class AppServiceProvider extends ServiceProvider
         // no server restart) — same "hot-swap runtime config" pattern the
         // installer already uses for the database connection.
         MailConfigurator::applyFromDatabase();
+
+        // Shared hosting can't be asked to configure a system cron job, so
+        // daily billing-reminder/expiry work instead piggybacks on the
+        // first real request of the day (see OpportunisticScheduler).
+        // Skipped in tests — see BillingReminderServiceTest, which calls
+        // the service directly instead of relying on this to fire.
+        if (! app()->environment('testing')) {
+            try {
+                if (Schema::hasTable('subscriptions')) {
+                    OpportunisticScheduler::runDaily('billing-reminders', function () {
+                        $service = app(BillingReminderService::class);
+                        $service->sendDueReminders();
+                        $service->expireLapsedSubscriptions();
+                    });
+                }
+            } catch (Throwable $e) {
+                report($e);
+            }
+        }
     }
 }

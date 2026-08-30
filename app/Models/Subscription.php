@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     'tenant_id', 'subscription_plan_id', 'billing_period', 'status',
     'trial_ends_at', 'current_period_start', 'current_period_end', 'cancelled_at',
+    'last_reminder_period_end',
 ])]
 class Subscription extends Model
 {
@@ -27,6 +28,7 @@ class Subscription extends Model
             'current_period_start' => 'datetime',
             'current_period_end' => 'datetime',
             'cancelled_at' => 'datetime',
+            'last_reminder_period_end' => 'date',
         ];
     }
 

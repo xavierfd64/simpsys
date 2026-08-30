@@ -48,6 +48,7 @@ Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(functi
         Route::livewire('/expenses', 'pages::tenant.expenses.index')->name('expenses.index');
         Route::livewire('/users', 'pages::tenant.users.index')->name('users.index');
         Route::livewire('/branches', 'pages::tenant.branches.index')->name('branches.index');
+        Route::livewire('/billing', 'pages::tenant.billing')->name('billing');
     });
 });
 
@@ -60,6 +61,7 @@ Route::middleware(['auth', 'platform.admin'])->prefix('admin')->name('admin.')->
 
     Route::livewire('/businesses', 'pages::admin.businesses.index')->name('businesses.index');
     Route::livewire('/businesses/{tenant}', 'pages::admin.businesses.show')->name('businesses.show');
+    Route::livewire('/businesses/{tenant}/statement', 'pages::admin.businesses.statement')->name('businesses.statement');
 
     Route::livewire('/plans', 'pages::admin.plans.index')->name('plans.index');
     Route::livewire('/promotions', 'pages::admin.promotions.index')->name('promotions.index');
