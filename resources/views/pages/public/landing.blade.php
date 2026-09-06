@@ -2,10 +2,13 @@
 
 use App\Models\SubscriptionPlan;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Layout('layouts.public')] #[Title('BizManager — Simple Business Management for Small Food Vendors')] class extends Component
+// No #[Title(...)] here on purpose — the homepage's browser tab should
+// show just the configured platform name (e.g. "Gatang"), which is what
+// layouts.public falls back to when no title is set. Attribute arguments
+// must be compile-time constants, so this can't be made dynamic directly.
+new #[Layout('layouts.public')] class extends Component
 {
     public $plans;
 

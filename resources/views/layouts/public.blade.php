@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>{{ $title ?? $platform->displayName() }}</title>
+    <title>{{ isset($title) ? $title.' — '.$platform->displayName() : $platform->displayName() }}</title>
 
     @if ($platform->favicon_path)
         <link rel="icon" href="{{ \App\Support\TenantStorage::url($platform->favicon_path) }}">

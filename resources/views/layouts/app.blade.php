@@ -23,6 +23,10 @@
     $kitchenEnabled = $tenant?->settings?->kitchen_enabled ?? true;
     $platform = \App\Models\PlatformSetting::current();
     $usableMemberships = auth()->user()?->usableMemberships() ?? collect();
+    // The tenant's own business name is the more useful browser-tab
+    // identity for someone using their own dashboard/POS; only fall back
+    // to the platform's name when no tenant is resolved yet.
+    $brandName = $tenant?->name ?? $platform->displayName();
 
     $visibleNavItems = array_filter($navItems, function ($item) use ($role, $kitchenEnabled) {
         if (! in_array($role, $item['roles'], true) || ! Route::has($item['route'])) {
@@ -45,7 +49,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>{{ $title ?? $platform->displayName() }}</title>
+    <title>{{ isset($title) ? $title.' — '.$brandName : $brandName }}</title>
 
     @if ($platform->favicon_path)
         <link rel="icon" href="{{ \App\Support\TenantStorage::url($platform->favicon_path) }}">

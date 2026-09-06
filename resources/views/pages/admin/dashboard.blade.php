@@ -103,7 +103,7 @@ new #[Layout('layouts.admin')] #[Title('Admin Dashboard')] class extends Compone
 <div class="space-y-6">
     <div>
         <h1 class="text-2xl font-semibold text-ink">Platform Overview</h1>
-        <p class="mt-1 text-sm text-muted">Businesses using BizManager.</p>
+        <p class="mt-1 text-sm text-muted">Businesses using {{ \App\Models\PlatformSetting::current()->displayName() }}.</p>
     </div>
 
     <div class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline bg-surface p-4">
