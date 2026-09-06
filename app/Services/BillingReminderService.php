@@ -20,6 +20,8 @@ class BillingReminderService
 {
     public const REMINDER_DAYS_BEFORE_DUE = 7;
 
+    public function __construct(protected SubscriptionService $subscriptions) {}
+
     /**
      * Emails every subscription in good standing whose period ends within
      * the reminder window, skipping any that already got a reminder for
@@ -67,7 +69,11 @@ class BillingReminderService
             ->get();
 
         foreach ($lapsed as $subscription) {
-            $subscription->update(['status' => SubscriptionStatus::Expired]);
+            // Routed through SubscriptionService::expire() rather than
+            // updating the row directly, so the owning Tenant's own status
+            // column — which every login/listing/badge check reads — stays
+            // in sync too. See the class docblock on SubscriptionService.
+            $this->subscriptions->expire($subscription);
 
             $owner = $subscription->tenant->owner()?->user;
             SafeMailer::send($owner?->email, new PaymentOverdueMail($subscription->tenant));

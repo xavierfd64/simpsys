@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\BillingPeriod;
 use App\Enums\SubscriptionStatus;
 use App\Enums\TenantMembershipRole;
+use App\Enums\TenantStatus;
 use App\Mail\BillingReminderMail;
 use App\Mail\PaymentOverdueMail;
 use App\Models\SubscriptionPlan;
@@ -106,6 +107,22 @@ class BillingReminderServiceTest extends TestCase
         $this->assertSame(1, $expired);
         $this->assertSame(SubscriptionStatus::Expired, $subscription->fresh()->status);
         Mail::assertSent(PaymentOverdueMail::class, fn ($mail) => $mail->hasTo('owner@example.test'));
+    }
+
+    /**
+     * Auto-expiry must go through SubscriptionService too, so the tenant's
+     * own status column (what the business list, the detail page's top
+     * badge, and login-gating all read) doesn't lag the subscription's.
+     */
+    public function test_expiring_a_lapsed_subscription_also_syncs_the_tenants_own_status(): void
+    {
+        Mail::fake();
+        [$tenant, , $subscription] = $this->makeSubscription(-3, SubscriptionStatus::Active->value);
+        $tenant->update(['status' => TenantStatus::Active]);
+
+        app(BillingReminderService::class)->expireLapsedSubscriptions();
+
+        $this->assertSame(TenantStatus::Expired, $tenant->fresh()->status);
     }
 
     public function test_does_not_expire_a_subscription_still_within_its_period(): void

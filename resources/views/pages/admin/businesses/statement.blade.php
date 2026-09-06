@@ -20,7 +20,10 @@ new #[Layout('layouts.admin')] #[Title('Statement of Account')] class extends Co
 
     public function getStatementProperty(): ?BillingStatement
     {
-        $subscription = $this->business->currentSubscription();
+        // latestSubscription() — an admin viewing a suspended/expired
+        // business's statement should see its actual last record and
+        // status, not a "no subscription" message.
+        $subscription = $this->business->latestSubscription();
 
         return $subscription ? BillingStatement::for($subscription) : null;
     }
@@ -31,7 +34,7 @@ new #[Layout('layouts.admin')] #[Title('Statement of Account')] class extends Co
         @include('partials.billing-statement', ['tenant' => $this->business, 'statement' => $this->statement, 'backUrl' => route('admin.businesses.show', $this->business)])
     @else
         <div class="rounded-xl border border-hairline bg-surface p-8 text-center text-muted">
-            No active subscription found for this business.
+            No subscription record found for this business.
         </div>
     @endif
 </div>

@@ -416,6 +416,51 @@ shared-hosting-appropriate.
   calls, not `whereBetween()` — caught by writing the CLAUDE.md note above
   first and applying the same fix proactively rather than rediscovering it
   the same way a second time.
+- **`Tenant.status` and `Subscription.status` are two independently-mutated
+  columns that must never drift apart — `SubscriptionService` is now the
+  sole place either is allowed to change.** Real production bug: a business
+  activated after a verified payment kept showing "Trial" on the business
+  list, the business detail page's own top badge, and to the tenant itself,
+  because `recordPayment()`/`activate()`/`extend()`/`renew()`/`expire()`/
+  `suspend()`/`cancel()` only ever updated the `Subscription` row —
+  `Tenant.status` (what `IdentifyTenant`'s login gate, `Tenant::
+  isOperational()`, and every status badge actually read) had no mechanism
+  keeping it in sync at all, so it just stuck at whatever it was set to at
+  registration. Fixed by giving `SubscriptionService` a `syncTenantStatus()`
+  step (both enums share identical string values, so it's a direct
+  `TenantStatus::from($subscriptionStatus->value)`) called from every one of
+  its mutating methods, and routing every other call site that used to
+  mutate a subscription's status directly through it instead —
+  `BillingReminderService::expireLapsedSubscriptions()` now calls
+  `SubscriptionService::expire()` rather than updating the row itself, and
+  the admin business detail page's suspend/reactivate actions now call
+  `SubscriptionService::suspend()`/`activate()` (falling back to a direct
+  `Tenant::update()` only when the tenant has no subscription record at
+  all, e.g. a very old or manually-created account). Deliberately did not
+  collapse the two columns into one derived value — a much larger change
+  touching every read site, against this round's own "don't redesign"
+  scope — since making one service the sole writer already gives a single
+  reliable source of truth without removing the existing two-column
+  architecture. Every new sync path was verified with the project's
+  standard stash-and-revert discipline (temporarily disable the sync call,
+  confirm the new regression test fails, restore it, confirm it passes
+  again) before being trusted.
+- **Routing admin suspend/reactivate through `SubscriptionService` would
+  have silently hidden the entire Subscription management card.**
+  `Tenant::currentSubscription()` is deliberately filtered to trial/active
+  only (correct for "is there a live subscription right now" checks like
+  the dashboard's trial-ending banner and seat-limit enforcement) — so the
+  moment `SubscriptionService::suspend()` flips a subscription's status to
+  `suspended`, any call site still using `currentSubscription()` to *look
+  up and display* that same subscription would get `null` back and the
+  whole management UI would vanish, which is worse than the original bug.
+  Added `Tenant::latestSubscription()` (unfiltered, most recent by id) for
+  every "show/manage the actual record regardless of its status" call site
+  instead: the admin business detail page, the owner's own `/app/billing`
+  statement, and the admin's view of any tenant's statement. Existing
+  `currentSubscription()` call sites (dashboard trial banner, Users page
+  seat-limit check) were deliberately left untouched — "only a live
+  subscription counts" is still the correct behavior there.
 
 ## Automation audit (round 2)
 

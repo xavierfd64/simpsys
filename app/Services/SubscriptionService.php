@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\SubscriptionStatus;
+use App\Enums\TenantStatus;
 use App\Mail\PaymentReceivedMail;
 use App\Models\BillingPayment;
 use App\Models\Subscription;
@@ -11,6 +12,19 @@ use App\Support\SafeMailer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * The single place a subscription's status is allowed to change — every
+ * method here keeps the owning Tenant's own `status` column in lockstep
+ * (see syncTenantStatus()) so there is exactly one reliable answer to "is
+ * this account trial/active/expired/suspended/cancelled" no matter which
+ * of the two columns a given screen happens to read. Before this, a
+ * business that had actually been activated (via activate()/renew()/
+ * recordPayment()) still showed "Trial" everywhere that reads
+ * Tenant::status (the business list, the business detail page's own
+ * top badge, IdentifyTenant's login gate) because only the Subscription
+ * row's status was ever updated — the two had no mechanism keeping them
+ * in sync at all.
+ */
 class SubscriptionService
 {
     public function activate(Subscription $subscription): Subscription
@@ -20,6 +34,8 @@ class SubscriptionService
             'current_period_start' => $subscription->current_period_start ?? now(),
             'current_period_end' => $subscription->current_period_end ?? $this->periodEnd($subscription),
         ]);
+
+        $this->syncTenantStatus($subscription, SubscriptionStatus::Active);
 
         return $subscription->fresh();
     }
@@ -35,6 +51,8 @@ class SubscriptionService
             'current_period_end' => $base->copy()->addDays($days),
         ]);
 
+        $this->syncTenantStatus($subscription, SubscriptionStatus::Active);
+
         return $subscription->fresh();
     }
 
@@ -48,6 +66,7 @@ class SubscriptionService
     public function expire(Subscription $subscription): Subscription
     {
         $subscription->update(['status' => SubscriptionStatus::Expired]);
+        $this->syncTenantStatus($subscription, SubscriptionStatus::Expired);
 
         return $subscription->fresh();
     }
@@ -55,6 +74,7 @@ class SubscriptionService
     public function suspend(Subscription $subscription): Subscription
     {
         $subscription->update(['status' => SubscriptionStatus::Suspended]);
+        $this->syncTenantStatus($subscription, SubscriptionStatus::Suspended);
 
         return $subscription->fresh();
     }
@@ -66,7 +86,20 @@ class SubscriptionService
             'cancelled_at' => now(),
         ]);
 
+        $this->syncTenantStatus($subscription, SubscriptionStatus::Cancelled);
+
         return $subscription->fresh();
+    }
+
+    /**
+     * A branch (non-root Tenant) never owns a Subscription row of its own
+     * — only a business's root tenant does — so this never runs against
+     * branch-specific state; `Tenant::isOperational()` layers branch
+     * approval and the parent's own status on top independently.
+     */
+    protected function syncTenantStatus(Subscription $subscription, SubscriptionStatus $status): void
+    {
+        $subscription->tenant->update(['status' => TenantStatus::from($status->value)]);
     }
 
     /**

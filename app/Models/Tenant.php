@@ -161,6 +161,20 @@ class Tenant extends Model
             ->first();
     }
 
+    /**
+     * The most recent subscription regardless of its status — unlike
+     * currentSubscription(), this still returns a suspended/expired/
+     * cancelled subscription. Use this anywhere the goal is to *display or
+     * manage* the account's subscription record (an admin's business
+     * detail page, a billing statement) rather than to gate a feature on
+     * "is there a live subscription right now" (a trial-ending banner, a
+     * seat-limit check) — currentSubscription() stays correct for those.
+     */
+    public function latestSubscription(): ?Subscription
+    {
+        return $this->subscriptions()->latest('id')->first();
+    }
+
     public function settings(): HasOne
     {
         return $this->hasOne(TenantSetting::class);

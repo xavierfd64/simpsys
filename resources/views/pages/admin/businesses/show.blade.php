@@ -44,7 +44,7 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
             'billingPayments' => fn ($q) => $q->latest('paid_at')->limit(10),
         ])->where('uuid', $tenant)->firstOrFail();
 
-        $this->selected_plan_id = (string) $this->business->currentSubscription()?->subscription_plan_id;
+        $this->selected_plan_id = (string) $this->business->latestSubscription()?->subscription_plan_id;
     }
 
     public function getOwnerProperty()
@@ -54,7 +54,11 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
 
     public function getSubscriptionProperty()
     {
-        return $this->business->currentSubscription();
+        // latestSubscription(), not currentSubscription() — an admin
+        // managing a suspended/expired/cancelled account still needs to
+        // see (and act on) its subscription record, not have the whole
+        // card disappear the moment it stops being "current".
+        return $this->business->latestSubscription();
     }
 
     public function getPlansProperty()
@@ -67,17 +71,35 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
         $this->business = $this->business->fresh(['memberships.user', 'subscriptions.plan', 'billingPayments']);
     }
 
-    public function suspendBusiness(): void
+    public function suspendBusiness(SubscriptionService $service): void
     {
-        $this->business->update(['status' => TenantStatus::Suspended]);
+        // Routed through SubscriptionService (rather than setting
+        // Tenant::status directly) so the subscription's own status badge
+        // on this same page can't end up disagreeing with the one at the
+        // top — both are kept in lockstep in exactly one place.
+        $subscription = $this->business->latestSubscription();
+
+        if ($subscription) {
+            $service->suspend($subscription);
+        } else {
+            $this->business->update(['status' => TenantStatus::Suspended]);
+        }
+
         SafeMailer::send($this->owner?->email, new AccountSuspendedMail($this->business));
         $this->refreshTenant();
         session()->flash('status', 'Business suspended.');
     }
 
-    public function reactivateBusiness(): void
+    public function reactivateBusiness(SubscriptionService $service): void
     {
-        $this->business->update(['status' => TenantStatus::Active]);
+        $subscription = $this->business->latestSubscription();
+
+        if ($subscription) {
+            $service->activate($subscription);
+        } else {
+            $this->business->update(['status' => TenantStatus::Active]);
+        }
+
         SafeMailer::send($this->owner?->email, new AccountReactivatedMail($this->business));
         $this->refreshTenant();
         session()->flash('status', 'Business reactivated.');
