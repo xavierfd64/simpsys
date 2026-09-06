@@ -123,4 +123,47 @@ class PlatformUpdateUploadTest extends TestCase
 
         $this->assertNull(session('pending_update'));
     }
+
+    /**
+     * End-to-end proof of the safe test ZIP flow through the real page: a
+     * package marked "mode": "test" is recognized, shown as a SAFE TEST/
+     * DRY RUN package (not the normal "Ready to Install" card), and
+     * running it reports a diagnostic without touching the real VERSION
+     * file or writing any real file.
+     */
+    public function test_uploading_a_safe_test_package_shows_the_dry_run_flow_and_changes_nothing(): void
+    {
+        File::put(base_path('VERSION'), "1.0.0\n");
+        $admin = User::factory()->create(['is_platform_admin' => true]);
+        $file = $this->buildPackageFile(['type' => 'bizmanager-update', 'mode' => 'test', 'version' => '999.0.0-test', 'release_notes' => 'Safe test package']);
+
+        $this->actingAs($admin)
+            ->post('/admin/updates/upload', ['update_zip' => $file])
+            ->assertRedirect(route('admin.updates.index'));
+
+        $this->actingAs($admin)
+            ->get('/admin/updates')
+            ->assertSee('SAFE TEST / DRY RUN')
+            ->assertSee('Run Test Update')
+            ->assertDontSee('Ready to Install');
+
+        Livewire::test('pages::admin.updates.index')->call('runTestUpdate');
+
+        $this->assertSame('1.0.0', trim(File::get(base_path('VERSION'))));
+        $this->assertFalse(File::exists(base_path('app/Placeholder.php')));
+    }
+
+    public function test_a_normal_non_test_package_still_shows_the_real_install_flow(): void
+    {
+        File::put(base_path('VERSION'), "1.0.0\n");
+        $admin = User::factory()->create(['is_platform_admin' => true]);
+        $file = $this->buildPackageFile(['type' => 'bizmanager-update', 'version' => '1.1.0']);
+
+        $this->actingAs($admin)->post('/admin/updates/upload', ['update_zip' => $file]);
+
+        $this->actingAs($admin)
+            ->get('/admin/updates')
+            ->assertSee('Ready to Install')
+            ->assertDontSee('SAFE TEST / DRY RUN');
+    }
 }

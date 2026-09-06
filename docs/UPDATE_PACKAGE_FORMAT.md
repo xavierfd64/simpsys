@@ -40,6 +40,42 @@ files/
 | `min_from_version` | no | The oldest installed version this package can be applied on top of. If the installation is older than this, the update is rejected with a message asking for an intermediate update first (no attempt to "catch up" multiple versions in one package). |
 | `release_notes` | no | Freeform text shown to the Platform Admin before they confirm the install. |
 | `generated_at` | no | Informational only; not validated. |
+| `mode` | no | If set to `"test"`, the package is a **safe test package** — see below. Absent (the normal case) for every real update. |
+
+### Safe test packages (`"mode": "test"`)
+
+A package whose manifest sets `"mode": "test"` is recognized, validated, and
+extracted exactly like a real one — same `type`, same required `version`
+field, same `min_from_version`/path-safety/protected-path rules — but the
+Platform Admin UI (`/admin/updates`) shows it as a **SAFE TEST / DRY RUN**
+package instead of a normal "Ready to Install" one, offering a **Run Test
+Update** action instead of **Confirm & Install**.
+
+Running a test package (`PlatformUpdateService::dryRun()`) exercises the
+full pipeline — manifest/type check, version and compatibility check, path
+safety check, extraction to an isolated temp directory, and a backup/apply
+plan computed the same way `install()` would — but:
+
+- never copies anything into the real application,
+- never runs a real database migration,
+- never writes the `VERSION` file,
+- and always deletes its temporary extraction directory afterward.
+
+`install()` itself refuses to run a `"mode": "test"` package for real (it
+throws immediately, before extracting anything), so there is no path by
+which a test package can ever be applied as a genuine update. This is the
+one and only update system in the app — a test package is simply a package
+that opts into `dryRun()` instead of `install()`; it is not a second
+pipeline.
+
+`BizManager_Update_Test.zip` (shipped alongside a release) is exactly this
+kind of package: it uses a deliberately far-future version
+(`999.0.0-test`) so it always reads as "newer" regardless of the installed
+version, and its `files/` payload deliberately includes one brand-new file
+(to exercise "would create"), one copy of `composer.json` (to exercise
+"would back up and overwrite" — never actually touched, since this is a
+dry run), and one file under `storage/` (to exercise the protected-path
+skip). None of these are ever written for real.
 
 ## `files/`
 

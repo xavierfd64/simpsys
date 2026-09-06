@@ -226,4 +226,74 @@ class PlatformUpdateServiceTest extends TestCase
         $this->assertSame('original contents', File::get($this->sandbox.'/app/Existing.php'));
         $this->assertFalse(File::exists($this->sandbox.'/app/BrandNew.php'));
     }
+
+    public function test_is_test_package_reads_the_mode_field(): void
+    {
+        $service = $this->service();
+
+        $this->assertTrue($service->isTestPackage(['type' => 'bizmanager-update', 'version' => '1.0.0', 'mode' => 'test']));
+        $this->assertFalse($service->isTestPackage(['type' => 'bizmanager-update', 'version' => '1.0.0']));
+    }
+
+    /**
+     * The exact user-facing promise for the safe test ZIP: the full
+     * pipeline runs (manifest, version, compatibility, path safety,
+     * backup/apply planning, post-update verification) but nothing on the
+     * real installation is touched at all.
+     */
+    public function test_dry_run_reports_success_without_changing_any_files_or_the_version(): void
+    {
+        File::put($this->sandbox.'/VERSION', "1.0.0\n");
+        File::ensureDirectoryExists($this->sandbox.'/app');
+        File::put($this->sandbox.'/app/Existing.php', 'untouched original');
+
+        $zipPath = $this->buildPackage(
+            ['type' => 'bizmanager-update', 'mode' => 'test', 'version' => '999.0.0-test', 'release_notes' => 'Safe test package'],
+            [
+                'app/Existing.php' => 'this must never actually be written',
+                'BIZMANAGER_UPDATE_TEST.txt' => 'brand new file, never actually created',
+                'storage/should-be-protected.txt' => 'must never be written — protected prefix',
+            ],
+        );
+
+        $result = $this->service()->dryRun($zipPath);
+
+        $this->assertTrue($result['success']);
+        $this->assertSame('dry_run', $result['mode']);
+        $this->assertNotEmpty($result['steps']);
+        $this->assertTrue(collect($result['steps'])->every(fn ($step) => $step['status'] === 'pass'));
+
+        // Nothing on the "installation" actually changed.
+        $this->assertSame('untouched original', File::get($this->sandbox.'/app/Existing.php'));
+        $this->assertFalse(File::exists($this->sandbox.'/BIZMANAGER_UPDATE_TEST.txt'));
+        $this->assertFalse(File::exists($this->sandbox.'/storage/should-be-protected.txt'));
+        $this->assertSame('1.0.0', trim(File::get($this->sandbox.'/VERSION')));
+        $this->assertEmpty(File::exists($this->sandbox.'/storage/app/update-backups') ? File::directories($this->sandbox.'/storage/app/update-backups') : []);
+    }
+
+    public function test_dry_run_refuses_a_package_that_is_not_marked_as_a_test(): void
+    {
+        File::put($this->sandbox.'/VERSION', "1.0.0\n");
+
+        $zipPath = $this->buildPackage(['type' => 'bizmanager-update', 'version' => '1.1.0'], ['app/Foo.php' => 'x']);
+
+        $result = $this->service()->dryRun($zipPath);
+
+        $this->assertFalse($result['success']);
+        $this->assertStringContainsString('not marked as a SAFE TEST package', $result['message']);
+        $this->assertFalse(File::exists($this->sandbox.'/app/Foo.php'));
+    }
+
+    public function test_install_refuses_to_run_a_test_package_for_real(): void
+    {
+        File::put($this->sandbox.'/VERSION', "1.0.0\n");
+
+        $zipPath = $this->buildPackage(
+            ['type' => 'bizmanager-update', 'mode' => 'test', 'version' => '999.0.0-test'],
+            ['app/Foo.php' => 'must never be written for real'],
+        );
+
+        $this->expectExceptionMessage('SAFE TEST package');
+        $this->service()->install($zipPath);
+    }
 }

@@ -516,6 +516,43 @@ shared-hosting-appropriate.
   exactly like the pre-existing SMTP settings on the same page. Business
   logo/name branding stays on the tenant's own Settings page, fully
   separate and untouched.
+- **A safe test ZIP for the self-service updater is one more manifest field
+  on the same pipeline, not a second update system.** `BizManager_Update_Test.zip`
+  uses the exact package format documented in `docs/UPDATE_PACKAGE_FORMAT.md`
+  (`manifest.json` + `files/`) with one additional optional manifest field,
+  `"mode": "test"`, alongside the already-optional `min_from_version`/
+  `release_notes`. `PlatformUpdateService::dryRun()` runs the identical
+  manifest/version/compatibility/path-safety checks `install()` does,
+  extracts to the same kind of isolated temp directory, and computes the
+  same backup/apply plan (`planFiles()` — a read-only walk that counts
+  create/overwrite/protected-skip/migration-skip without touching the
+  filesystem outside the temp dir) — but never copies anything into the
+  real app, never runs a real migration, and never writes `VERSION`.
+  `install()` itself refuses to run a `"mode": "test"` package for real
+  (throws immediately, before extracting anything), so there is no path
+  by which a test package can ever apply as a genuine update — confirmed
+  with the project's stash-and-revert discipline on both guards (removing
+  either one and watching its regression test fail before restoring it).
+  The Platform Admin UI (`/admin/updates`) recognizes a test package after
+  upload and shows a distinct amber "SAFE TEST / DRY RUN Package Detected"
+  card with a **Run Test Update** action instead of the normal **Confirm
+  & Install**, then a pass/fail diagnostic listing every pipeline step
+  (package recognized, safe-test-mode confirmed, version detected,
+  compatibility check, path safety, sandboxed extraction, backup/apply
+  plan, processing simulated, post-update verification).
+  `BizManager_Update_Test.zip`'s own payload: a deliberately far-future
+  version (`999.0.0-test`, so it always reads as "newer" regardless of
+  the installed version), one brand-new marker file (exercises "would
+  create"), one copy of `composer.json` (exercises "would back up and
+  overwrite" — never actually touched, since this is a dry run), and one
+  file under `storage/` (exercises the pre-existing protected-path skip).
+  Verified against the actual shipped ZIP three ways before delivery: a
+  standalone script running `dryRun()` directly against an isolated
+  sandbox (confirmed all 9 steps pass and the sandbox's `VERSION`/files
+  were genuinely untouched), a full HTTP-upload-through-Livewire test
+  exercising the real `/admin/updates` page end to end, and `install()`
+  confirmed to reject the same file outright — all three against the
+  literal file being delivered, not a synthetic stand-in.
 
 ## Automation audit (round 2)
 
@@ -804,6 +841,26 @@ Tracking the master instruction's Development Order (section 35):
       its files with path-traversal and protected-path guards, runs
       migrations, and rolls back on failure — no shell/SSH/Composer access
       needed, matching the installer's own philosophy.
+- [x] **Post-launch targeted fixes/additions round 3** ("final corrections"
+      — four explicitly scoped items, no unrelated changes): browser tab
+      titles now use the configured platform name or the tenant's own
+      business name everywhere (`isset($title) ? $title.' — '.$brandName
+      : $brandName` in all four real layouts, replacing a hardcoded
+      literal on the marketing homepage and a fallback that effectively
+      never fired since almost every page already sets its own short
+      `#[Title(...)]`); fixed the "Trial persists after verified payment"
+      state bug by making `SubscriptionService` the sole writer of
+      subscription status and syncing the owning `Tenant.status` on every
+      mutating method, rather than just changing what a badge displays
+      (see the `syncTenantStatus()`/`latestSubscription()` notes above);
+      added a Platform Admin-only Appearance section (primary color +
+      controlled-list font, applied system-wide via a runtime CSS
+      custom-property override with a WCAG contrast check, fully separate
+      from tenant business branding); and a safe `BizManager_Update_Test.zip`
+      that exercises the existing self-service updater's full pipeline via
+      a new `PlatformUpdateService::dryRun()` path (one additional
+      optional manifest field, not a second update system) without
+      changing any real file, migration, or `VERSION`.
 
 ## Demo accounts (seeded, password `password`)
 

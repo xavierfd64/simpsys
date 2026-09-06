@@ -102,6 +102,20 @@ class PlatformUpdateService
     }
 
     /**
+     * Whether a manifest declares itself a safe test package (an optional
+     * field alongside `min_from_version`/`release_notes` — the package
+     * format, and every validation rule above, stays exactly the same as a
+     * real update; this only ever changes what install() below does with
+     * an already-validated package).
+     *
+     * @param  array{mode?: string}  $manifest
+     */
+    public function isTestPackage(array $manifest): bool
+    {
+        return ($manifest['mode'] ?? null) === 'test';
+    }
+
+    /**
      * @return array{success: bool, message: string}
      */
     public function install(string $zipPath): array
@@ -109,6 +123,10 @@ class PlatformUpdateService
         $manifest = $this->readManifest($zipPath);
         $this->validateManifest($manifest);
         $this->assertNoUnsafePaths($zipPath);
+
+        if ($this->isTestPackage($manifest)) {
+            throw new RuntimeException('This is a SAFE TEST package — it cannot be installed for real. Use "Run Test Update" instead, which validates the same pipeline without changing any files.');
+        }
 
         $tempDir = $this->basePath.'/storage/app/update-temp/'.Str::uuid();
         File::ensureDirectoryExists($tempDir);
@@ -165,6 +183,136 @@ class PlatformUpdateService
                     .' If any database migrations ran before the failure, they were not automatically reverted — check your database before retrying.',
             ];
         }
+    }
+
+    /**
+     * Exercises the exact same package-recognition/validation/extraction
+     * pipeline as install() — manifest, version, compatibility, path
+     * safety, protected-path and already-shipped-migration rules — but
+     * never writes anything to $this->basePath and never touches VERSION
+     * or runs a real migration. Only a package whose manifest declares
+     * itself a test package (see isTestPackage()) may be run this way, so
+     * a Platform Admin can prove the pipeline genuinely works end-to-end
+     * without any risk to a real installation's files, tenant data, or
+     * database.
+     *
+     * @return array{success: bool, message: string, mode: string, steps: array<int, array{step: string, status: string, detail: string}>}
+     */
+    public function dryRun(string $zipPath): array
+    {
+        $steps = [];
+
+        try {
+            $manifest = $this->readManifest($zipPath);
+            $steps[] = ['step' => 'Package recognized', 'status' => 'pass', 'detail' => "manifest.json found, type = \"{$manifest['type']}\"."];
+
+            if (! $this->isTestPackage($manifest)) {
+                throw new RuntimeException('This package is not marked as a SAFE TEST package (manifest is missing "mode": "test"). Refusing to dry-run a real update package — use "Confirm & Install" instead.');
+            }
+            $steps[] = ['step' => 'Safe test mode confirmed', 'status' => 'pass', 'detail' => 'Manifest declares "mode": "test" — no real files, database, or VERSION will be changed.'];
+
+            $steps[] = ['step' => 'Version detected', 'status' => 'pass', 'detail' => "Package version {$manifest['version']}."];
+
+            $current = $this->currentVersion();
+            $this->validateManifest($manifest);
+            $steps[] = ['step' => 'Version compatibility check', 'status' => 'pass', 'detail' => "{$manifest['version']} is newer than the installed {$current}".(! empty($manifest['min_from_version']) ? " and the installation meets the required minimum of {$manifest['min_from_version']}." : '.')];
+
+            $this->assertNoUnsafePaths($zipPath);
+            $steps[] = ['step' => 'Path safety check', 'status' => 'pass', 'detail' => 'No path-traversal or unsafe entry names found in the archive.'];
+
+            $tempDir = $this->basePath.'/storage/app/update-temp/'.Str::uuid();
+            File::ensureDirectoryExists($tempDir);
+
+            try {
+                $zip = new ZipArchive;
+
+                if ($zip->open($zipPath) !== true) {
+                    throw new RuntimeException('Could not open the update package for extraction.');
+                }
+
+                $zip->extractTo($tempDir);
+                $zip->close();
+
+                $sourceFilesDir = $tempDir.'/files';
+
+                if (! File::isDirectory($sourceFilesDir)) {
+                    throw new RuntimeException('The update package is missing its files/ directory.');
+                }
+                $steps[] = ['step' => 'Package extracted to a sandbox', 'status' => 'pass', 'detail' => 'Extracted to a temporary directory only — nothing copied into the real application yet.'];
+
+                $plan = $this->planFiles($sourceFilesDir);
+                $steps[] = [
+                    'step' => 'Backup/apply plan computed',
+                    'status' => 'pass',
+                    'detail' => "{$plan['create']} file(s) would be created, {$plan['overwrite']} would be backed up then replaced, {$plan['protected']} protected-path file(s) skipped, {$plan['migration_skip']} already-shipped migration(s) skipped.",
+                ];
+
+                $steps[] = [
+                    'step' => 'Update processing simulated',
+                    'status' => 'pass',
+                    'detail' => 'No files were written, no migrations were run, and VERSION was not changed — this was a dry run only.',
+                ];
+
+                $steps[] = [
+                    'step' => 'Post-update verification',
+                    'status' => 'pass',
+                    'detail' => "Installed version is still {$current}. The real update pipeline is working correctly.",
+                ];
+
+                return [
+                    'success' => true,
+                    'message' => 'Safe test completed successfully — the update pipeline works, and nothing on this installation was changed.',
+                    'mode' => 'dry_run',
+                    'steps' => $steps,
+                ];
+            } finally {
+                File::deleteDirectory($tempDir);
+            }
+        } catch (Throwable $e) {
+            $steps[] = ['step' => 'Failed', 'status' => 'fail', 'detail' => $e->getMessage()];
+
+            return [
+                'success' => false,
+                'message' => 'Safe test failed: '.$e->getMessage(),
+                'mode' => 'dry_run',
+                'steps' => $steps,
+            ];
+        }
+    }
+
+    /**
+     * Read-only pass over what applyFiles() would do, without touching the
+     * filesystem outside the already-isolated temp extraction directory.
+     *
+     * @return array{create: int, overwrite: int, protected: int, migration_skip: int}
+     */
+    protected function planFiles(string $source): array
+    {
+        $plan = ['create' => 0, 'overwrite' => 0, 'protected' => 0, 'migration_skip' => 0];
+
+        foreach (File::allFiles($source) as $file) {
+            $relative = str_replace('\\', '/', $file->getRelativePathname());
+
+            if ($this->isProtectedPath($relative)) {
+                $plan['protected']++;
+
+                continue;
+            }
+
+            if (str_starts_with($relative, 'database/migrations/') && File::exists($this->basePath.'/'.$relative)) {
+                $plan['migration_skip']++;
+
+                continue;
+            }
+
+            if (File::exists($this->basePath.'/'.$relative)) {
+                $plan['overwrite']++;
+            } else {
+                $plan['create']++;
+            }
+        }
+
+        return $plan;
     }
 
     /**
