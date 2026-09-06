@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\PlatformSetting;
+use App\Support\ColorTheme;
 use App\Support\MailConfigurator;
 use App\Support\TenantStorage;
 use Illuminate\Support\Facades\Mail;
@@ -51,6 +52,10 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
 
     public string $test_email_message = '';
 
+    public string $theme_primary_color = '';
+
+    public string $theme_font = 'inter';
+
     public function mount(): void
     {
         $settings = PlatformSetting::current();
@@ -60,6 +65,9 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
         $this->support_phone = (string) $settings->support_phone;
         $this->current_logo_path = $settings->logo_path;
         $this->current_favicon_path = $settings->favicon_path;
+
+        $this->theme_primary_color = $settings->theme_primary_color ?: ColorTheme::DEFAULT_PRIMARY;
+        $this->theme_font = $settings->theme_font ?: 'inter';
 
         $this->mail_mailer = $settings->mail_mailer ?: 'smtp';
         $this->mail_host = (string) $settings->mail_host;
@@ -123,6 +131,40 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
         TenantStorage::delete($settings->favicon_path);
         $settings->update(['favicon_path' => null]);
         $this->current_favicon_path = null;
+    }
+
+    public function saveAppearance(): void
+    {
+        $data = $this->validate([
+            'theme_primary_color' => ['required', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+            'theme_font' => ['required', 'in:'.implode(',', array_keys(PlatformSetting::FONTS))],
+        ], attributes: ['theme_primary_color' => 'primary color']);
+
+        if (! ColorTheme::isAccessible($data['theme_primary_color'])) {
+            $this->addError('theme_primary_color', 'This color is too light to keep white button/badge text readable. Please choose a darker shade.');
+
+            return;
+        }
+
+        PlatformSetting::current()->update([
+            'theme_primary_color' => $data['theme_primary_color'],
+            'theme_font' => $data['theme_font'],
+        ]);
+
+        session()->flash('status', 'Appearance updated.');
+    }
+
+    public function resetAppearance(): void
+    {
+        PlatformSetting::current()->update([
+            'theme_primary_color' => null,
+            'theme_font' => null,
+        ]);
+
+        $this->theme_primary_color = ColorTheme::DEFAULT_PRIMARY;
+        $this->theme_font = 'inter';
+
+        session()->flash('status', 'Appearance reset to default.');
     }
 
     public function saveMail(): void
@@ -287,6 +329,55 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
                     wire:loading.attr="disabled" wire:target="save">
                 Save Changes
             </button>
+        </form>
+    </div>
+
+    <div class="rounded-xl border border-hairline bg-surface p-6">
+        <h2 class="text-base font-semibold text-ink">Appearance</h2>
+        <p class="mt-1 text-sm text-muted">System-wide primary color and font, applied to buttons, links, active nav, badges, and accents across the whole app. This is separate from a business's own logo/name branding.</p>
+
+        <form wire:submit="saveAppearance" class="mt-4 space-y-4">
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-ink">Primary Color</label>
+                    <div class="flex items-center gap-3">
+                        <input wire:model.live="theme_primary_color" type="color" class="h-10 w-14 shrink-0 cursor-pointer rounded-lg border border-hairline p-1">
+                        <input wire:model.live="theme_primary_color" type="text" maxlength="7" placeholder="#2563eb"
+                               class="w-28 rounded-lg border border-hairline px-3 py-2 text-sm font-mono focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                    </div>
+                    @error('theme_primary_color') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-ink">Font</label>
+                    <select wire:model.live="theme_font" class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm">
+                        @foreach (\App\Models\PlatformSetting::FONTS as $key => $font)
+                            <option value="{{ $key }}" style="font-family: {{ $font['stack'] }}">{{ $font['label'] }}</option>
+                        @endforeach
+                    </select>
+                    @error('theme_font') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                </div>
+            </div>
+
+            <div>
+                <p class="mb-2 text-xs font-medium uppercase tracking-wide text-muted">Preview</p>
+                <div class="flex flex-wrap items-center gap-3 rounded-lg border border-hairline bg-app-bg p-4" style="font-family: {{ \App\Models\PlatformSetting::FONTS[$theme_font]['stack'] ?? 'inherit' }}">
+                    <button type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-white" style="background-color: {{ $theme_primary_color }}">Primary Button</button>
+                    <span class="rounded-full px-2.5 py-1 text-xs font-medium text-white" style="background-color: {{ $theme_primary_color }}">Badge</span>
+                    <a href="#" onclick="return false" class="text-sm font-medium" style="color: {{ $theme_primary_color }}">A sample link</a>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button type="submit"
+                        class="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700"
+                        wire:loading.attr="disabled" wire:target="saveAppearance">
+                    Save Appearance
+                </button>
+                <button type="button" wire:click="resetAppearance" wire:confirm="Reset the primary color and font to the default?"
+                        class="rounded-lg border border-hairline px-4 py-2.5 text-sm font-semibold text-ink hover:bg-app-bg">
+                    Reset to Default
+                </button>
+            </div>
         </form>
     </div>
 

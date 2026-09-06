@@ -461,6 +461,61 @@ shared-hosting-appropriate.
   `currentSubscription()` call sites (dashboard trial banner, Users page
   seat-limit check) were deliberately left untouched — "only a live
   subscription counts" is still the correct behavior there.
+- **Platform-wide theme colors are applied as a runtime CSS custom-property
+  override, not a Tailwind rebuild.** Tailwind v4's CSS-based `@theme` block
+  in `resources/css/app.css` already compiles `--color-primary-50/100/200/
+  500/600/700` and `--font-sans` into real `:root` custom properties that
+  every `bg-primary-600`/`text-primary-600`/etc. utility class reads at
+  paint time — so a Platform Admin's saved color/font can be applied by
+  emitting one more `<style>:root{...}</style>` block *after* the compiled
+  stylesheet's `<link>` (same selector, same specificity — later simply
+  wins), with no `npm run build`, no Vite, no shell access needed at
+  request time. `resources/views/partials/theme-style.blade.php` does
+  exactly this and is included in all four real layouts (`app`, `admin`,
+  `guest`, `public` — deliberately not `install`, which has no admin/
+  PlatformSetting to read from yet and is left on the raw framework
+  default, matching the Stage 13 installer's own pre-branding state) right
+  after their `@vite(...)` call; it's a no-op (renders nothing) when no
+  custom theme is configured, so an unconfigured install looks pixel-
+  identical to before this feature existed. `App\Support\ColorTheme`
+  generates the 50/100/200/500/600/700 ramp around one admin-picked hex by
+  lightening/darkening in RGB space (matching the existing default
+  palette's own shape: 500 and 600 the same, 700 noticeably darker) so
+  every existing utility class across the whole app gets a coherent set of
+  shades from a single "Primary Color" picker, without needing a "complicated
+  theme builder" (explicitly out of scope) or the admin picking six colors.
+- **A raw hex value must never reach a `<style>` block un-validated, and
+  `{{ }}`'s HTML-entity escaping breaks CSS text content inside one.**
+  Two separate things enforced here: (1) `ColorTheme::isAccessible()`
+  computes the real WCAG relative-luminance contrast ratio between the
+  chosen color and white and rejects anything under 4.5:1 — primary
+  buttons/badges render white text on this color, so an admin picking a
+  pale color (tested with `#fef9c3`) would otherwise ship unreadable
+  white-on-pale-yellow controls system-wide; this is checked server-side
+  in `saveAppearance()`, not just left to the native `<input type="color">`
+  picker's own UI. (2) the font-stack line in the theme-style partial
+  deliberately uses `{!! !!}`, not `{{ }}` — confirmed by writing
+  `test_a_saved_theme_color_is_applied_as_a_css_variable_on_a_real_page`
+  first and watching it fail: `<style>` is an HTML "raw text" element per
+  spec, so an escaped `&#039;` inside it is never decoded back to a quote
+  by the CSS parser and the font-family string breaks. Safe specifically
+  *because* the value is never arbitrary/user-supplied CSS — `fontStack()`
+  only ever returns one of the fixed strings in `PlatformSetting::FONTS`,
+  a controlled list (Inter, System UI, Arial, Verdana, Georgia — all
+  either the app's existing self-hosted `@fontsource` default or an
+  OS-installed system font, so picking one needs no new package, network
+  fetch, or build step, unlike accepting an arbitrary font URL would).
+  The hex color value doesn't have this problem (already constrained to
+  `^#[0-9A-Fa-f]{6}$` server-side, which contains no characters `{{ }}`
+  would escape differently), so it's left as ordinary escaped output.
+- **Only Platform Admin can reach this at all — enforced structurally, not
+  by a role check inside the component.** The entire Appearance section
+  lives on the existing `/admin/settings` page, already behind the
+  `['auth', 'platform.admin']` route middleware group from Stage 11 — a
+  tenant owner has no route, component, or menu item that exposes it,
+  exactly like the pre-existing SMTP settings on the same page. Business
+  logo/name branding stays on the tenant's own Settings page, fully
+  separate and untouched.
 
 ## Automation audit (round 2)
 

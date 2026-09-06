@@ -26,6 +26,7 @@
     @endif
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @include('partials.theme-style', ['__platform' => $platform])
     @livewireStyles
 </head>
 <body class="min-h-screen bg-app-bg font-sans text-ink">
