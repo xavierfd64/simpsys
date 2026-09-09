@@ -65,6 +65,31 @@ class InstallerTest extends TestCase
         );
     }
 
+    /**
+     * The installer wizard itself must become unreachable once installed —
+     * not just theoretically, but confirmed the same way the AJAX-exemption
+     * regression above is: by actually driving the real middleware branch,
+     * not just reading InstallerService::isInstalled()'s own unit test.
+     * This is the direct test for the audit's explicit "revisit installer
+     * routes post-install" requirement.
+     */
+    public function test_install_route_redirects_away_once_the_app_is_installed(): void
+    {
+        File::put(storage_path('app/installed.lock'), '1');
+        $this->app['env'] = 'production';
+
+        $middleware = new RedirectIfNotInstalled;
+        $next = fn ($request) => new Response('handled');
+
+        $installRequest = Request::create('/install', 'GET');
+        $this->app->instance('request', $installRequest);
+
+        $response = $middleware->handle($installRequest, $next);
+
+        $this->assertSame(302, $response->getStatusCode());
+        $this->assertSame(url('/'), $response->headers->get('Location'));
+    }
+
     public function test_preflight_gate_runs_standalone_without_composer_or_laravel(): void
     {
         // preflight.php runs before vendor/autoload.php is required, so it
