@@ -709,6 +709,185 @@ the way.
   testing section of `docs/PAYPAL_INTEGRATION.md`; nothing in this
   environment can substitute for that specific step.
 
+## Security audit (full white-hat pass)
+
+A full authentication/authorization/tenant-isolation/OWASP-style audit
+across the entire application, following a discover → exploit-safely (PoC
+against the real unfixed code) → patch → retest cycle rather than reading
+code and assuming it's secure. The two most severe findings:
+
+- **CRITICAL — cross-tenant account takeover via `TenantMembership`.**
+  Unlike `Product`/`Sale`/`Expense`/etc., `TenantMembership` never adopted
+  the `BelongsToTenant` trait (a membership is the FK relationship itself,
+  not a scoped resource in the same sense) — but that also meant every
+  `TenantMembership::findOrFail($clientSuppliedId)` call in
+  `tenant/users/index.blade.php` (`openEdit`, `save`, `toggleActive`,
+  `resetPassword`) had **no tenant check of its own**. An authenticated
+  owner of any tenant could reset any other tenant's user's password (full
+  account takeover), change their email/name/role, or deactivate them, just
+  by supplying that user's real membership id — confirmed with a PoC that
+  actually reset a victim's password before the fix, and confirmed blocked
+  after. Fixed with a single `ownMembershipOrFail()` helper that routes
+  every lookup through the current tenant's own `memberships()` relation
+  instead of a bare model lookup — found by noticing `TenantMembership` was
+  conspicuously absent from `grep -rl "use BelongsToTenant" app/Models`'s
+  results and specifically auditing every raw lookup in that one file.
+  **Any future model that isn't `BelongsToTenant`-scoped needs this same
+  manual-scoping discipline audited explicitly — the trait's absence from a
+  model is not itself a signal that scoping doesn't matter there.**
+- **HIGH — file-upload extension trusted the client filename, not the
+  validated content.** `TenantStorage::storeImage()`/`storePlatformImage()`
+  built the stored filename's extension from
+  `UploadedFile::getClientOriginalExtension()` — the client-supplied
+  original name. Laravel's own `mimes` rule already blocks the most common
+  PHP client extensions (`php`, `php3-8`, `phtml`, `phar`), but that
+  blocklist isn't exhaustive: `.pht`/`.phtm` are real PHP-executable
+  extensions on a stock cPanel/Apache `AddHandler` config (exactly the
+  shared hosting this app targets) and aren't in it. A genuinely real image
+  uploaded with a client filename ending in `.pht` passed content-based
+  `mimes:jpg,jpeg,png,webp` validation and got stored under that literal
+  extension — the classic image-polyglot upload-to-RCE vector. Confirmed
+  with a PoC (real JPEG bytes, malicious client filename) against the
+  unfixed code first. Fixed by deriving the stored extension from the
+  file's own detected content type (`guessExtension()`, mapped through an
+  explicit whitelist) instead — an unrecognized type now falls back to the
+  inert `.bin`, never anything a web server could execute, regardless of
+  what any current or future validation rule allows through.
+
+Other confirmed-and-fixed findings, roughly in the order found:
+
+- **HIGH — PayPal order IDOR.** `PayPalReturnController`/
+  `PayPalCancelController` accepted a client-supplied `?token=` (PayPal
+  order id) with no check that it belonged to the currently authenticated
+  tenant — one tenant could cancel, or attempt to trigger completion of,
+  another tenant's pending order by replaying its id. Fixed with a
+  tenant-ownership check before acting in both controllers; the webhook
+  path is unaffected (it has no "current user" to compare against and
+  relies on PayPal's own signature instead, which is the correct trust
+  boundary there).
+- **MEDIUM — password-reset account enumeration.** `forgot-password`
+  showed Laravel's stock `passwords.user` message ("We can't find a user
+  with that email address") verbatim — a textbook enumeration oracle.
+  Unified to an identical generic message regardless of whether the email
+  is registered; the login form already used a generic
+  "These credentials could not be verified" for both an unknown email and
+  a wrong password.
+- **Layered login brute-force protection**, per the audit's own explicit
+  numeric spec: `App\Services\LoginProtectionService` tracks failed
+  attempts per-account (cache-backed, TTL matching the lockout window — no
+  unbounded storage growth, no permanent lockout) and locks an account out
+  for a configurable duration (default 15 min) after a configurable
+  threshold (default 5), *and* separately rate-limits by IP (via
+  `RateLimiter`, independent of which account is targeted) so a script
+  can't cheaply grind through many different accounts' thresholds at once.
+  `App\Support\Captcha` is a from-scratch server-side math challenge
+  (e.g. "What is 7 + 4?") — question **and** answer both live in
+  `session()`, single-use via `session()->pull()`, a fresh question is
+  generated after every wrong answer, and the answer is never sent to the
+  client or logged. Required after 3 failed attempts (before the 5th
+  triggers lockout), enforced entirely server-side in `login()` — a client
+  disabling JS or replaying a raw POST still hits the same checks. All
+  thresholds are configurable via new `platform_settings` columns
+  (`login_protection_enabled`, `max_login_attempts`, `lockout_minutes`,
+  `captcha_enabled`, `captcha_threshold`, `rate_limiting_enabled`), editable
+  from Platform Admin → Settings → Security (Task list below). Deliberately
+  no new package, no Redis/Node/persistent-worker requirement — everything
+  rides the existing cache/session infrastructure, staying shared-hosting
+  compatible.
+- **Security-relevant audit logging.** Before this round, `AuditLog` was
+  only ever written for PayPal events and sale voids — none of
+  LOGIN_SUCCESS/LOGIN_FAILED/ACCOUNT_LOCKED/PASSWORD_RESET/
+  PASSWORD_CHANGED/ROLE_CHANGED/ADMIN_ACTION/SUBSCRIPTION_ACTIVATED/
+  PAYMENT_COMPLETED/SECURITY_SETTING_CHANGED existed at all. Added logging
+  at every one of these points (login component, password-reset component,
+  the tenant Users page's role/password actions, and the admin
+  business-detail page's suspend/reactivate/delete/subscription/payment
+  actions) — none of it logs a password, token, or CAPTCHA answer.
+- **Session cookie `secure` flag defaulted to null (not secure).**
+  `SESSION_SECURE_COOKIE` is never asked for by the installer and this
+  app's whole philosophy is "no manual `.env` editing" — so most real
+  installs would silently ship a session cookie usable over plain HTTP even
+  on an HTTPS site. `AppServiceProvider::boot()` now derives it from the
+  actual incoming request when unconfigured (secure exactly when the
+  request itself arrived over HTTPS), checked via `config()` rather than
+  `env()` directly since `env()` returns null outside config files once
+  `config:cache` has run — using it directly would silently override even
+  a deliberate explicit `false`.
+- **Baseline security response headers** (`App\Http\Middleware\
+  SecurityHeaders`, appended to the `web` group): CSP scoped to
+  `default-src 'self'` (every script/style/font/image this app loads is
+  already self-hosted — see the font-hosting decision above — so this costs
+  nothing), `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`,
+  a restrictive `Permissions-Policy`, and HSTS sent only when the request
+  itself already arrived over HTTPS (never pins a fresh HTTP-only install
+  into HTTPS-only prematurely). PayPal checkout needs **no** CSP exception
+  anywhere — it's a genuine server-side redirect
+  (`redirect()->away($approveUrl)`) to PayPal's own hosted page, not an
+  embedded SDK/iframe. `script-src`/`style-src` do need `'unsafe-inline'`
+  (a few inline `style="width:...%"` bars, Livewire's own bootstrap script)
+  and `script-src` also needs `'unsafe-eval'` specifically because
+  Alpine.js (bundled with Livewire; this project deliberately doesn't add a
+  separate Alpine CSP-build package) evaluates `x-data`/`x-on` expressions
+  via `new Function(...)` — a documented, deliberate trade-off that still
+  blocks loading a script/style/image from an attacker-controlled external
+  origin on top of (not instead of) the app's own output escaping.
+  **Caveat, stated honestly rather than overclaimed**: PHPUnit's test
+  client doesn't execute JS/CSS, so the suite proves the headers are sent
+  with the intended values but can't itself prove no real browser would hit
+  a CSP violation — the same bcmath-related inability to serve this app
+  over a real HTTP+browser session documented in the PayPal section above
+  applies here too. The policy was kept deliberately permissive enough that
+  this is a low-risk gap, but a real-browser check is still worth doing
+  once on infrastructure that can actually serve the app.
+- **Rate limiting gaps closed**: password-reset requests (5/hour per IP,
+  independent of Laravel's own existing per-email 60s throttle, which
+  doesn't stop one source flooding many different victims) and PayPal
+  order creation (10/10-minutes per authenticated user — protects this
+  installation's own PayPal API quota/credentials from being hammered, not
+  credential guessing). Login, registration, and every PayPal callback
+  endpoint already had adequate protection (this round's own work, a
+  pre-existing 5/hour IP limit, and tenant-ownership/signature checks,
+  respectively).
+- **Defensive `#[Hidden]` on `PlatformSetting`.** No live exploit exists
+  today (nothing currently serializes a whole `PlatformSetting` instance or
+  binds it as a public Livewire property), but the model had no
+  `#[Hidden(...)]` at all unlike `User`'s own
+  `#[Hidden(['password', ...])]` — and this exact codebase already uses the
+  `public Tenant $business` pattern elsewhere that would leak
+  `mail_password`/`paypal_client_secret`/`paypal_webhook_id` into a
+  Livewire snapshot if ever applied to `PlatformSetting` by mistake. Added
+  as pure defense-in-depth (`#[Hidden]` only affects serialization, not
+  normal property access — zero behavior change).
+- **Everything already solid, re-verified rather than re-built**: Platform
+  Admin route isolation (a tenant user gets a real 403 on every `/admin/*`
+  route by direct URL, and `is_platform_admin` is excluded from `User`'s
+  fillable list so it's structurally impossible to set via any client
+  input); mass assignment across every model's fillable list (nothing
+  sensitive — `tenant_id`, `role`, subscription/payment status fields — is
+  ever set from client input anywhere, only from `Auth::id()`/
+  `TenantContext`/other already-trusted server values); stored XSS (the
+  only `{!! !!}` anywhere is the already-documented safe theme font-stack
+  line; verified with live rendered-page tests injecting `<script>` into
+  product/expense/business-name/notice fields, not just a source-code
+  read); SQL injection (zero raw/interpolated SQL anywhere; every
+  `selectRaw()` is a fixed literal aggregate expression); installer
+  post-install lockout (added the one missing direct HTTP-level test of
+  the real middleware branch); PayPal/webhook security (signature
+  verification, idempotency, server-computed amounts, and the tenant-IDOR
+  fix above already cover every scenario the audit names — successful/
+  denied/pending/reversed capture, duplicate webhook, forged/unverified
+  signature, malformed payload, unknown order).
+
+Platform Admin → Settings → Security (new section on the existing
+`/admin/settings` page, following the same per-card pattern as Branding/
+Appearance/Email/Payment) is the UI for the `platform_settings` columns
+above — Login Protection toggle, Failed Attempts (3-20), Lockout Duration
+(1-1440 min), CAPTCHA toggle, CAPTCHA Trigger (must be below the lockout
+threshold — enforced server-side), Rate Limiting toggle. A short note on
+the same card states plainly that this only covers login brute-force, not
+a network-level DDoS, and points to hosting/CDN/WAF-level protection for
+that — not claimed as something this app can provide.
+
 ## Automation audit (round 2)
 
 A review pass across every customer-facing workflow, done alongside the multi-
@@ -1038,6 +1217,36 @@ Tracking the master instruction's Development Order (section 35):
       edit, and the Client Secret is encrypted at rest and never
       redisplayed. See `docs/PAYPAL_INTEGRATION.md` for setup/testing
       instructions.
+- [x] **Full white-hat security audit, penetration test, and hardening
+      pass** (see "Security audit (full white-hat pass)" above for full
+      detail): discover → exploit-safely (PoC against real unfixed code) →
+      patch → retest across authentication, session management, tenant/
+      branch/Platform Admin isolation, mass assignment, XSS, SQL injection,
+      file uploads, the installer, PayPal/webhooks, session/cookie config,
+      security headers, rate limiting, secrets, and debug/error exposure.
+      Found and fixed one CRITICAL (cross-tenant account takeover via
+      unscoped `TenantMembership` lookups), one HIGH (file-upload extension
+      trusted the client filename instead of validated content — a real
+      image-polyglot upload-to-RCE vector on the shared-hosting `.pht`/
+      `.phtm` Apache configs this app targets), a second HIGH (PayPal order
+      IDOR — one tenant could cancel/complete another tenant's pending
+      order), and one MEDIUM (password-reset account enumeration) — every
+      one confirmed exploitable against the real unfixed code with a PoC
+      before being patched, then reconfirmed blocked. Added layered login
+      brute-force protection (account lockout + IP rate limit + a
+      from-scratch server-side math CAPTCHA, all thresholds configurable
+      from a new Platform Admin → Settings → Security section), security-
+      relevant audit logging that didn't exist before this round (login/
+      password/role/admin-action events), baseline security response
+      headers (CSP/nosniff/frame-protection/HSTS), a dynamically-correct
+      session cookie `Secure` flag, and closed two rate-limiting gaps
+      (password reset, PayPal order creation). Everything else in scope —
+      Platform Admin isolation, mass assignment, stored XSS, SQL injection,
+      installer lockout, PayPal/webhook security — was re-verified with
+      real tests (not just a source-code read) and found already solid
+      from earlier rounds, with no further changes needed. No known
+      unresolved Critical or High-risk finding remains from this audit's
+      scope; full suite green throughout (290 tests at completion).
 
 ## Demo accounts (seeded, password `password`)
 
