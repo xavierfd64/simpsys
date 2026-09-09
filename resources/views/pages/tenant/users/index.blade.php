@@ -62,9 +62,24 @@ new #[Layout('layouts.app')] #[Title('Users')] class extends Component
         $this->showFormModal = true;
     }
 
+    /**
+     * TenantMembership has no BelongsToTenant global scope of its own (a
+     * membership legitimately belongs to exactly one tenant, but the
+     * relation is the FK, not a scoped-model concept the way
+     * Product/Sale/Expense are) — every lookup by a client-supplied id
+     * must therefore be routed through the current tenant's own
+     * memberships() relation, never a bare TenantMembership::findOrFail(),
+     * or a crafted id lets one tenant act on another tenant's user
+     * (password reset included — a full account-takeover risk).
+     */
+    protected function ownMembershipOrFail(int $membershipId): TenantMembership
+    {
+        return app(TenantContext::class)->tenant()->memberships()->with('user')->findOrFail($membershipId);
+    }
+
     public function openEdit(int $membershipId): void
     {
-        $membership = TenantMembership::with('user')->findOrFail($membershipId);
+        $membership = $this->ownMembershipOrFail($membershipId);
 
         $this->editingMembershipId = $membership->id;
         $this->name = $membership->user->name;
@@ -79,7 +94,7 @@ new #[Layout('layouts.app')] #[Title('Users')] class extends Component
         $tenant = app(TenantContext::class)->tenant();
 
         if ($this->editingMembershipId) {
-            $membership = TenantMembership::with('user')->findOrFail($this->editingMembershipId);
+            $membership = $this->ownMembershipOrFail($this->editingMembershipId);
 
             $this->validate([
                 'name' => ['required', 'string', 'max:255'],
@@ -116,7 +131,7 @@ new #[Layout('layouts.app')] #[Title('Users')] class extends Component
 
     public function toggleActive(int $membershipId): void
     {
-        $membership = TenantMembership::findOrFail($membershipId);
+        $membership = $this->ownMembershipOrFail($membershipId);
 
         if ($membership->user_id === Auth::id()) {
             $this->addError('self', 'You cannot deactivate your own account.');
@@ -142,7 +157,7 @@ new #[Layout('layouts.app')] #[Title('Users')] class extends Component
     {
         $this->validate(['new_password' => ['required', 'string', 'min:8']]);
 
-        $membership = TenantMembership::with('user')->findOrFail($this->resettingMembershipId);
+        $membership = $this->ownMembershipOrFail($this->resettingMembershipId);
         $membership->user->update(['password' => Hash::make($this->new_password)]);
 
         $this->showPasswordModal = false;

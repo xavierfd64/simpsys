@@ -16,6 +16,8 @@ use Illuminate\Database\Eloquent\Model;
     'theme_primary_color', 'theme_font',
     'manual_payment_enabled', 'paypal_enabled', 'paypal_environment', 'paypal_client_id',
     'paypal_client_secret', 'paypal_webhook_id', 'paypal_currency',
+    'login_protection_enabled', 'max_login_attempts', 'lockout_minutes',
+    'captcha_enabled', 'captcha_threshold', 'rate_limiting_enabled',
 ])]
 class PlatformSetting extends Model
 {
@@ -55,6 +57,12 @@ class PlatformSetting extends Model
             'paypal_client_secret' => 'encrypted',
             'manual_payment_enabled' => 'boolean',
             'paypal_enabled' => 'boolean',
+            'login_protection_enabled' => 'boolean',
+            'captcha_enabled' => 'boolean',
+            'rate_limiting_enabled' => 'boolean',
+            'max_login_attempts' => 'integer',
+            'lockout_minutes' => 'integer',
+            'captcha_threshold' => 'integer',
         ];
     }
 
@@ -64,13 +72,21 @@ class PlatformSetting extends Model
         // the row MySQL/SQLite actually stores — a freshly created()
         // instance doesn't get re-fetched from the database afterward, so
         // without these explicit values a brand-new row's in-memory
-        // manual_payment_enabled/paypal_enabled would read back as null
-        // (missing from the model's attributes entirely) rather than the
-        // intended true/false, which a strictly bool-typed property
-        // assignment elsewhere then rejects outright.
+        // booleans would read back as null (missing from the model's
+        // attributes entirely) rather than the intended true/false, which
+        // a strictly bool-typed property assignment elsewhere then rejects
+        // outright. Every default here matches the schema's own default so
+        // this is purely a "keep a freshly-created in-memory row correct"
+        // fix, not a behavior change.
         return static::query()->firstOrCreate([], [
             'manual_payment_enabled' => true,
             'paypal_enabled' => false,
+            'login_protection_enabled' => true,
+            'max_login_attempts' => 5,
+            'lockout_minutes' => 15,
+            'captcha_enabled' => true,
+            'captcha_threshold' => 3,
+            'rate_limiting_enabled' => true,
         ]);
     }
 

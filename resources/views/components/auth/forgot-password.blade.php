@@ -17,8 +17,14 @@ new #[Layout('layouts.guest')] #[Title('Forgot Password')] class extends Compone
 
         $status = Password::sendResetLink(['email' => $this->email]);
 
-        if ($status === Password::RESET_LINK_SENT) {
-            $this->status = __($status);
+        // Deliberately identical whether this email is registered or not —
+        // Laravel's own default INVALID_USER message ("We can't find a
+        // user with that email address.") is a textbook account-
+        // enumeration oracle, so it is never shown here. A genuine
+        // throttling status is still shown as-is since it doesn't reveal
+        // anything about whether the account exists.
+        if (in_array($status, [Password::RESET_LINK_SENT, Password::INVALID_USER], true)) {
+            $this->status = 'If an account exists for that email address, a password reset link has been sent.';
             $this->reset('email');
 
             return;

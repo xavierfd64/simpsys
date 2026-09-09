@@ -1,9 +1,9 @@
 <?php
 
 use App\Models\User;
+use App\Services\LoginProtectionService;
+use App\Support\Captcha;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -17,6 +17,38 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
 
     public bool $remember = false;
 
+    public string $captcha_answer = '';
+
+    public ?string $captchaQuestion = null;
+
+    public int $lockoutSecondsRemaining = 0;
+
+    public function mount(): void
+    {
+        // A fresh component instance (page load, reload) otherwise has no
+        // way to know a CAPTCHA challenge is already active in session —
+        // without this, a legitimate reload mid-challenge would silently
+        // discard a perfectly valid question and force an extra round trip.
+        $this->captchaQuestion = Captcha::currentQuestion();
+    }
+
+    protected function protection(): LoginProtectionService
+    {
+        return app(LoginProtectionService::class);
+    }
+
+    protected function lockoutMessage(): string
+    {
+        $minutes = intdiv($this->lockoutSecondsRemaining, 60);
+        $seconds = $this->lockoutSecondsRemaining % 60;
+
+        return sprintf(
+            'Too many failed login attempts. Your account is temporarily locked. Try again in %d:%02d.',
+            $minutes,
+            $seconds,
+        );
+    }
+
     public function login(): void
     {
         $this->validate([
@@ -24,25 +56,74 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
             'password' => ['required', 'string'],
         ]);
 
-        $throttleKey = Str::lower($this->email).'|'.request()->ip();
+        $ip = request()->ip();
+        $protection = $this->protection();
 
-        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
-            $seconds = RateLimiter::availableIn($throttleKey);
-
+        // IP-level layer — independent of any one account, so a script
+        // grinding through many different accounts' credentials from one
+        // source is capped without needing any of those accounts to
+        // individually reach their own lockout threshold first.
+        if ($protection->ipTooManyAttempts($ip)) {
             throw ValidationException::withMessages([
-                'email' => "Too many login attempts. Please try again in {$seconds} seconds.",
+                'email' => 'Too many login attempts from this location. Please try again later.',
             ]);
+        }
+
+        // Account-level lockout — enforced here regardless of what a
+        // client-side countdown displays; a locked account stays blocked
+        // until this server-side check itself says otherwise.
+        if ($protection->isLockedOut($this->email)) {
+            $this->lockoutSecondsRemaining = $protection->secondsRemaining($this->email);
+
+            throw ValidationException::withMessages(['email' => $this->lockoutMessage()]);
+        }
+
+        // CAPTCHA gate — must be solved before a password attempt is even
+        // tried, so a wrong CAPTCHA answer never itself counts as (or
+        // masks) a credential guess.
+        if ($protection->requiresCaptcha($this->email)) {
+            if (blank($this->captchaQuestion) || ! Captcha::hasActiveChallenge()) {
+                $this->captchaQuestion = Captcha::generate();
+
+                throw ValidationException::withMessages([
+                    'captcha_answer' => 'Please answer the security question below to continue.',
+                ]);
+            }
+
+            if (! Captcha::verify($this->captcha_answer)) {
+                $this->captchaQuestion = Captcha::generate();
+                $this->captcha_answer = '';
+
+                throw ValidationException::withMessages([
+                    'captcha_answer' => 'Incorrect answer. Please try again.',
+                ]);
+            }
+
+            $this->captchaQuestion = null;
+            $this->captcha_answer = '';
         }
 
         if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
-            RateLimiter::hit($throttleKey, 60);
+            $protection->recordFailure($this->email, $ip);
 
+            if ($protection->isLockedOut($this->email)) {
+                $this->lockoutSecondsRemaining = $protection->secondsRemaining($this->email);
+
+                throw ValidationException::withMessages(['email' => $this->lockoutMessage()]);
+            }
+
+            if ($protection->requiresCaptcha($this->email)) {
+                $this->captchaQuestion = Captcha::generate();
+            }
+
+            // Deliberately identical whether the email doesn't exist or the
+            // password is simply wrong — never confirm which one it was.
             throw ValidationException::withMessages([
-                'email' => 'These credentials do not match our records.',
+                'email' => 'These credentials could not be verified.',
             ]);
         }
 
-        RateLimiter::clear($throttleKey);
+        $protection->recordSuccess($this->email);
         session()->regenerate();
 
         /** @var User $user */
@@ -52,7 +133,7 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
             Auth::logout();
 
             throw ValidationException::withMessages([
-                'email' => 'This account has been deactivated.',
+                'email' => 'These credentials could not be verified.',
             ]);
         }
 
@@ -71,7 +152,7 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
         Auth::logout();
 
         throw ValidationException::withMessages([
-            'email' => 'No active business was found for this account.',
+            'email' => 'These credentials could not be verified.',
         ]);
     }
 }; ?>
@@ -85,6 +166,18 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
     @if (session('status'))
         <div class="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
             {{ session('status') }}
+        </div>
+    @endif
+
+    @if ($lockoutSecondsRemaining > 0)
+        <div x-data="{ seconds: {{ $lockoutSecondsRemaining }} }"
+             x-init="setInterval(() => { if (seconds > 0) seconds-- }, 1000)"
+             class="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p class="font-medium">Your account is temporarily locked.</p>
+            <p class="mt-1">
+                Try again in
+                <span class="font-mono font-semibold" x-text="String(Math.floor(seconds / 60)).padStart(2, '0') + ':' + String(seconds % 60).padStart(2, '0')"></span>
+            </p>
         </div>
     @endif
 
@@ -104,6 +197,16 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
                    class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
             @error('password') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
         </div>
+
+        @if ($captchaQuestion)
+            <div>
+                <label for="captcha_answer" class="mb-1 block text-sm font-medium text-ink">Security Question: {{ $captchaQuestion }}</label>
+                <input wire:model="captcha_answer" id="captcha_answer" type="text" inputmode="numeric" autocomplete="off"
+                       placeholder="Your answer"
+                       class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                @error('captcha_answer') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+            </div>
+        @endif
 
         <div class="flex items-center justify-between">
             <label class="flex items-center gap-2 text-sm text-muted">
