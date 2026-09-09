@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\PlatformSetting;
 use App\Services\PayPalClient;
 use App\Support\ColorTheme;
@@ -77,9 +78,28 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
 
     public string $paypal_test_message = '';
 
+    public bool $login_protection_enabled = true;
+
+    public int $max_login_attempts = 5;
+
+    public int $lockout_minutes = 15;
+
+    public bool $captcha_enabled = true;
+
+    public int $captcha_threshold = 3;
+
+    public bool $rate_limiting_enabled = true;
+
     public function mount(): void
     {
         $settings = PlatformSetting::current();
+
+        $this->login_protection_enabled = $settings->login_protection_enabled;
+        $this->max_login_attempts = $settings->max_login_attempts;
+        $this->lockout_minutes = $settings->lockout_minutes;
+        $this->captcha_enabled = $settings->captcha_enabled;
+        $this->captcha_threshold = $settings->captcha_threshold;
+        $this->rate_limiting_enabled = $settings->rate_limiting_enabled;
 
         $this->platform_name = (string) $settings->platform_name;
         $this->support_email = (string) $settings->support_email;
@@ -356,6 +376,45 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
         $this->has_paypal_client_secret = filled($settings->fresh()->paypal_client_secret);
 
         session()->flash('status', 'PayPal settings updated.');
+    }
+
+    /**
+     * Keeps these thresholds sane rather than trusting whatever number an
+     * admin types — an accidental 0-minute lockout or a 1-attempt threshold
+     * would either defeat the protection entirely or lock out real users
+     * on a single typo. Bounds match the spec's own defaults (5 attempts /
+     * 15 minutes / CAPTCHA after 3) as the intended, sensible middle.
+     */
+    public function saveSecuritySettings(): void
+    {
+        $data = $this->validate([
+            'login_protection_enabled' => ['boolean'],
+            'max_login_attempts' => ['required', 'integer', 'min:3', 'max:20'],
+            'lockout_minutes' => ['required', 'integer', 'min:1', 'max:1440'],
+            'captcha_enabled' => ['boolean'],
+            'captcha_threshold' => ['required', 'integer', 'min:1', 'max:19'],
+            'rate_limiting_enabled' => ['boolean'],
+        ], attributes: [
+            'max_login_attempts' => 'failed attempts',
+            'lockout_minutes' => 'lockout duration',
+            'captcha_threshold' => 'CAPTCHA trigger',
+        ]);
+
+        if ($data['captcha_threshold'] >= $data['max_login_attempts']) {
+            $this->addError('captcha_threshold', 'The CAPTCHA trigger must be reached before the lockout threshold.');
+
+            return;
+        }
+
+        PlatformSetting::current()->update($data);
+
+        AuditLog::record('SECURITY_SETTING_CHANGED', [
+            'user_id' => \Illuminate\Support\Facades\Auth::id(),
+            'description' => 'Platform Admin updated login protection / CAPTCHA / rate limiting settings.',
+            'metadata' => $data,
+        ]);
+
+        session()->flash('status', 'Security settings updated.');
     }
 }; ?>
 
@@ -731,5 +790,69 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
                 </ol>
             </div>
         </div>
+    </div>
+
+    <div class="rounded-xl border border-hairline bg-surface p-6">
+        <h2 class="text-base font-semibold text-ink">Security</h2>
+        <p class="mt-1 text-sm text-muted">Login brute-force protection, CAPTCHA, and rate limiting. Safe defaults are already in effect — only change these if you know what you're doing.</p>
+
+        <form wire:submit="saveSecuritySettings" class="mt-4 space-y-4">
+            <label class="flex items-center justify-between rounded-lg border border-hairline px-4 py-3">
+                <span>
+                    <span class="block text-sm font-medium text-ink">Login Protection</span>
+                    <span class="block text-xs text-muted">Enforced server-side regardless of what the browser sends — locks an account out after too many failed attempts.</span>
+                </span>
+                <input wire:model="login_protection_enabled" type="checkbox" class="h-5 w-5 rounded border-hairline text-primary-600 focus:ring-primary-500">
+            </label>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-ink">Failed Attempts Before Lockout</label>
+                    <input wire:model="max_login_attempts" type="number" min="3" max="20"
+                           class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                    @error('max_login_attempts') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                </div>
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-ink">Lockout Duration (minutes)</label>
+                    <input wire:model="lockout_minutes" type="number" min="1" max="1440"
+                           class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                    @error('lockout_minutes') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                </div>
+            </div>
+
+            <label class="flex items-center justify-between rounded-lg border border-hairline px-4 py-3">
+                <span>
+                    <span class="block text-sm font-medium text-ink">CAPTCHA</span>
+                    <span class="block text-xs text-muted">A simple server-side math question — no external service, generated fresh each time.</span>
+                </span>
+                <input wire:model="captcha_enabled" type="checkbox" class="h-5 w-5 rounded border-hairline text-primary-600 focus:ring-primary-500">
+            </label>
+
+            <div>
+                <label class="mb-1 block text-sm font-medium text-ink">CAPTCHA Trigger (failed attempts)</label>
+                <input wire:model="captcha_threshold" type="number" min="1" max="19"
+                       class="w-full max-w-[160px] rounded-lg border border-hairline px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                <p class="mt-1 text-xs text-muted">Require CAPTCHA after this many failed attempts on an account (must be fewer than the lockout threshold above).</p>
+                @error('captcha_threshold') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+            </div>
+
+            <label class="flex items-center justify-between rounded-lg border border-hairline px-4 py-3">
+                <span>
+                    <span class="block text-sm font-medium text-ink">Rate Limiting</span>
+                    <span class="block text-xs text-muted">Caps login attempts from a single source, independent of which account is being targeted — blunts scripted attacks and intentional account-lockout abuse.</span>
+                </span>
+                <input wire:model="rate_limiting_enabled" type="checkbox" class="h-5 w-5 rounded border-hairline text-primary-600 focus:ring-primary-500">
+            </label>
+
+            <p class="text-xs text-muted">
+                Note: these settings only cover login brute-force attempts. A large-scale network DDoS is outside what any application-level setting can stop — use your hosting provider's or a CDN/WAF's DDoS protection for that, if available.
+            </p>
+
+            <button type="submit"
+                    class="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700"
+                    wire:loading.attr="disabled" wire:target="saveSecuritySettings">
+                Save Security Settings
+            </button>
+        </form>
     </div>
 </div>

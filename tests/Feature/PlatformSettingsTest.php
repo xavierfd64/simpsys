@@ -142,4 +142,73 @@ class PlatformSettingsTest extends TestCase
             ->call('sendTestEmail')
             ->assertSet('test_email_status', 'failure');
     }
+
+    public function test_admin_can_update_security_settings(): void
+    {
+        $admin = User::factory()->create(['is_platform_admin' => true]);
+        $this->actingAs($admin);
+
+        Livewire::test('pages::admin.settings')
+            ->set('login_protection_enabled', true)
+            ->set('max_login_attempts', 7)
+            ->set('lockout_minutes', 30)
+            ->set('captcha_enabled', true)
+            ->set('captcha_threshold', 4)
+            ->set('rate_limiting_enabled', false)
+            ->call('saveSecuritySettings')
+            ->assertHasNoErrors();
+
+        $settings = PlatformSetting::current();
+        $this->assertTrue($settings->login_protection_enabled);
+        $this->assertSame(7, $settings->max_login_attempts);
+        $this->assertSame(30, $settings->lockout_minutes);
+        $this->assertTrue($settings->captcha_enabled);
+        $this->assertSame(4, $settings->captcha_threshold);
+        $this->assertFalse($settings->rate_limiting_enabled);
+
+        $this->assertDatabaseHas('audit_logs', ['action' => 'SECURITY_SETTING_CHANGED']);
+    }
+
+    public function test_security_settings_reject_a_captcha_threshold_at_or_past_the_lockout_threshold(): void
+    {
+        $admin = User::factory()->create(['is_platform_admin' => true]);
+        $this->actingAs($admin);
+
+        Livewire::test('pages::admin.settings')
+            ->set('max_login_attempts', 5)
+            ->set('captcha_threshold', 5)
+            ->call('saveSecuritySettings')
+            ->assertHasErrors('captcha_threshold');
+    }
+
+    public function test_security_settings_reject_an_out_of_range_lockout_duration(): void
+    {
+        $admin = User::factory()->create(['is_platform_admin' => true]);
+        $this->actingAs($admin);
+
+        Livewire::test('pages::admin.settings')
+            ->set('lockout_minutes', 0)
+            ->call('saveSecuritySettings')
+            ->assertHasErrors('lockout_minutes');
+    }
+
+    public function test_saved_security_settings_are_actually_used_by_login_protection(): void
+    {
+        $admin = User::factory()->create(['is_platform_admin' => true]);
+        $this->actingAs($admin);
+
+        Livewire::test('pages::admin.settings')
+            ->set('max_login_attempts', 4)
+            ->set('lockout_minutes', 45)
+            ->call('saveSecuritySettings');
+
+        $service = app(\App\Services\LoginProtectionService::class);
+
+        for ($i = 0; $i < 4; $i++) {
+            $service->recordFailure('victim@example.test', '127.0.0.1');
+        }
+
+        $this->assertTrue($service->isLockedOut('victim@example.test'));
+        $this->assertGreaterThan(44 * 60, $service->secondsRemaining('victim@example.test'));
+    }
 }
