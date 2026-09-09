@@ -7,6 +7,8 @@ use App\Services\PayPalCheckoutService;
 use App\Services\TenantContext;
 use App\Support\BillingStatement;
 use App\Support\PayPalException;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -79,6 +81,21 @@ new #[Layout('layouts.app')] #[Title('Billing')] class extends Component
     public function payWithPayPal(PayPalCheckoutService $checkout)
     {
         $this->paypal_error = null;
+
+        // Per-user, not per-IP — this is an authenticated action, and the
+        // real cost being guarded against is repeated calls to PayPal's own
+        // Orders API (this installation's configured PayPal credentials/
+        // quota) and a growing pile of abandoned PayPalOrder rows, not
+        // credential guessing.
+        $throttleKey = 'paypal-order|'.Auth::id();
+
+        if (RateLimiter::tooManyAttempts($throttleKey, 10)) {
+            $this->paypal_error = 'Too many payment attempts. Please wait a few minutes and try again.';
+
+            return;
+        }
+
+        RateLimiter::hit($throttleKey, 600);
 
         $this->validate([
             'selected_plan_id' => ['required', 'exists:subscription_plans,id'],

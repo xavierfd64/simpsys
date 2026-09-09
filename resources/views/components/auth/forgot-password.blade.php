@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -11,9 +12,28 @@ new #[Layout('layouts.guest')] #[Title('Forgot Password')] class extends Compone
 
     public ?string $status = null;
 
+    /**
+     * Laravel's own password broker already throttles repeat emails to the
+     * *same* address (config/auth.php's passwords.users.throttle, 60s) —
+     * this is a separate, IP-scoped limit so a single source can't cheaply
+     * flood many different victims' inboxes, or just hammer the endpoint's
+     * own DB lookups/SMTP send, in one burst. Same pattern already used for
+     * registration.
+     */
     public function sendResetLink(): void
     {
         $this->validate(['email' => ['required', 'string', 'email']]);
+
+        $throttleKey = 'password-reset|'.request()->ip();
+
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            $seconds = RateLimiter::availableIn($throttleKey);
+            $this->addError('email', "Too many attempts. Please try again in {$seconds} seconds.");
+
+            return;
+        }
+
+        RateLimiter::hit($throttleKey, 3600);
 
         $status = Password::sendResetLink(['email' => $this->email]);
 
