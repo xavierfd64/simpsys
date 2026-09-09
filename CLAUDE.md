@@ -678,6 +678,36 @@ the way.
   applies to manual payments; only a `COMPLETED` capture (confirmed by
   BizManager's own call to PayPal's capture API, whether triggered by the
   browser return or a webhook) can activate a subscription.
+- **A "COMPLETED" capture status with no discoverable capture id must fail
+  closed, not activate with a null reference.** Found while attempting a
+  real end-to-end sandbox test: this sandbox's own egress policy blocks
+  the entire `paypal.com` domain (API and developer docs both, confirmed
+  with a direct connection probe and a docs-fetch attempt — not a
+  transient issue), so a genuine third-party round-trip against real
+  PayPal servers isn't possible from this environment; the same is true
+  of clicking through the app in a real browser here at all, since this
+  sandbox's PHP build is also missing `bcmath`, which the app's own
+  preflight check requires (a separate, pre-existing limitation predating
+  this feature). With the network path closed, the most rigorous
+  substitute was re-scrutinizing `completeOrder()`'s assumptions about
+  PayPal's response shape and probing the one that looked weakest: a
+  response claiming `"status": "COMPLETED"` but missing
+  `purchase_units[0].payments.captures[0].id` (malformed, or a future API
+  change) fell through the existing `?? null` guard and activated the
+  subscription anyway with `paypal_capture_id` left `null` — verified this
+  by literally reproducing it in a throwaway test before fixing. Real
+  PayPal responses always include the capture id alongside a `COMPLETED`
+  status, so this was never reachable against the real API, but it
+  violates this project's own "never activate on an unverifiable claim"
+  rule and would have weakened the audit trail/idempotency key the rest of
+  the system relies on. Fixed by requiring both `status === 'COMPLETED'`
+  *and* a non-blank capture id before treating a capture as genuine;
+  confirmed via stash-and-revert that the regression test fails without
+  the fix. **A real Sandbox checkout (real buyer approval, real webhook
+  delivery) still needs to be run once on infrastructure with actual
+  internet access to paypal.com before going Live** — see the Sandbox
+  testing section of `docs/PAYPAL_INTEGRATION.md`; nothing in this
+  environment can substitute for that specific step.
 
 ## Automation audit (round 2)
 

@@ -103,8 +103,16 @@ class PayPalCheckoutService
 
         $capture = $this->client->captureOrder($paypalOrderId);
         $status = $capture['status'] ?? null;
+        $captureId = $capture['purchase_units'][0]['payments']['captures'][0]['id'] ?? null;
 
-        if ($status !== 'COMPLETED') {
+        // A "COMPLETED" status with no discoverable capture id is treated
+        // as not genuinely completed — this project's own rule is to never
+        // activate on a claim that can't be verified, and a capture id is
+        // both PayPal's real confirmation and the identifier the rest of
+        // the system (BillingPayment, idempotency, admin auditing) relies
+        // on. A malformed/unexpected response shape must fail closed, not
+        // silently activate with a null reference.
+        if ($status !== 'COMPLETED' || blank($captureId)) {
             // A conditional update (not a blind one) so a slower concurrent
             // caller can't stomp on a completion that a faster one already
             // recorded in between this check and here.
@@ -121,7 +129,6 @@ class PayPalCheckoutService
             return ['success' => false, 'message' => 'This payment was not completed.', 'order' => $order->fresh()];
         }
 
-        $captureId = $capture['purchase_units'][0]['payments']['captures'][0]['id'] ?? null;
         $payerEmail = $capture['payer']['email_address'] ?? null;
 
         // The atomic gate: only one concurrent caller's UPDATE can match

@@ -201,6 +201,39 @@ class PayPalCheckoutServiceTest extends TestCase
         $this->assertDatabaseMissing('billing_payments', ['paypal_order_id' => 'ORDER1']);
     }
 
+    /**
+     * A malformed/unexpected capture response claiming "COMPLETED" but
+     * missing a discoverable capture id must fail closed, not silently
+     * activate the subscription with no real PayPal confirmation on
+     * record — a capture id is both the actual proof of payment and the
+     * identifier idempotency/auditing rely on afterward.
+     */
+    public function test_a_completed_status_with_no_discoverable_capture_id_does_not_activate(): void
+    {
+        $this->configurePayPal();
+        Http::fake([
+            '*/v1/oauth2/token' => Http::response(['access_token' => 'tok']),
+            '*/v2/checkout/orders/ORDER1/capture' => Http::response([
+                'id' => 'ORDER1', 'status' => 'COMPLETED',
+                // malformed: no purchase_units/captures at all
+            ]),
+        ]);
+
+        ['tenant' => $tenant, 'subscription' => $subscription, 'plan' => $plan] = $this->makeTenantWithSubscription();
+        PayPalOrder::create([
+            'tenant_id' => $tenant->id, 'subscription_id' => $subscription->id, 'subscription_plan_id' => $plan->id,
+            'billing_period' => 'monthly', 'amount' => 999, 'currency' => 'PHP',
+            'paypal_order_id' => 'ORDER1', 'status' => 'created',
+        ]);
+
+        $result = app(PayPalCheckoutService::class)->completeOrder('ORDER1');
+
+        $this->assertFalse($result['success']);
+        $this->assertSame('failed', $result['order']->status);
+        $this->assertSame(TenantStatus::Trial, $tenant->fresh()->status);
+        $this->assertDatabaseMissing('billing_payments', ['paypal_order_id' => 'ORDER1']);
+    }
+
     public function test_completing_an_unknown_order_throws(): void
     {
         $this->configurePayPal();
