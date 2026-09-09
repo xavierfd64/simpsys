@@ -4,6 +4,7 @@ use App\Http\Middleware\EnsurePlatformAdmin;
 use App\Http\Middleware\EnsureTenantRole;
 use App\Http\Middleware\IdentifyTenant;
 use App\Http\Middleware\RedirectIfNotInstalled;
+use App\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -18,6 +19,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(prepend: [
             RedirectIfNotInstalled::class,
+        ]);
+
+        $middleware->web(append: [
+            SecurityHeaders::class,
         ]);
 
         // PayPal POSTs webhook events with no session/CSRF token of any
