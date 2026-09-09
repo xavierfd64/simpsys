@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -19,6 +20,17 @@ use Illuminate\Database\Eloquent\Model;
     'login_protection_enabled', 'max_login_attempts', 'lockout_minutes',
     'captcha_enabled', 'captcha_threshold', 'rate_limiting_enabled',
 ])]
+// Defense-in-depth, matching User's own #[Hidden(['password', ...])]
+// pattern: nothing in this codebase currently serializes a PlatformSetting
+// instance to JSON/array or binds it as a public Livewire property (every
+// call site either reads one specific field or goes through a computed
+// getX Property() method, neither of which this affects) — but a future
+// change that did (e.g. the same `public Tenant $business` pattern already
+// used elsewhere in this app, applied to PlatformSetting by mistake) would
+// otherwise leak the SMTP password and PayPal client secret/webhook id
+// straight into a Livewire snapshot or API response with no other guard
+// in place to catch it.
+#[Hidden(['mail_password', 'paypal_client_secret', 'paypal_webhook_id'])]
 class PlatformSetting extends Model
 {
     /**
