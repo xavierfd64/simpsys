@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\PlatformSetting;
 use App\Models\User;
+use App\Services\LoginProtectionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
@@ -202,7 +203,7 @@ class PlatformSettingsTest extends TestCase
             ->set('lockout_minutes', 45)
             ->call('saveSecuritySettings');
 
-        $service = app(\App\Services\LoginProtectionService::class);
+        $service = app(LoginProtectionService::class);
 
         for ($i = 0; $i < 4; $i++) {
             $service->recordFailure('victim@example.test', '127.0.0.1');

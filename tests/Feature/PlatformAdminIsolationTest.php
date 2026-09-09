@@ -3,10 +3,10 @@
 namespace Tests\Feature;
 
 use App\Enums\TenantMembershipRole;
-use App\Models\AuditLog;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -83,7 +83,7 @@ class PlatformAdminIsolationTest extends TestCase
 
         $this->actingAs($admin);
 
-        \Livewire\Livewire::test('pages::admin.businesses.show', ['tenant' => $tenant->uuid])
+        Livewire::test('pages::admin.businesses.show', ['tenant' => $tenant->uuid])
             ->call('suspendBusiness');
 
         $this->assertDatabaseHas('audit_logs', [

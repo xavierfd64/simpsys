@@ -6,6 +6,7 @@ use App\Enums\TenantMembershipRole;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\PaymentMethod;
+use App\Models\PlatformNotification;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\Tenant;
@@ -109,7 +110,7 @@ class StoredXssSweepTest extends TestCase
     {
         [$tenant] = $this->makeOwner();
 
-        \App\Models\PlatformNotification::create([
+        PlatformNotification::create([
             'audience' => 'all',
             'title' => 'Notice',
             'message' => self::PAYLOAD,

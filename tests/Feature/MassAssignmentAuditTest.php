@@ -7,11 +7,15 @@ use App\Enums\SubscriptionStatus;
 use App\Enums\TenantMembershipRole;
 use App\Models\PayPalOrder;
 use App\Models\Product;
+use App\Models\Scopes\TenantScope;
 use App\Models\Subscription;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -74,7 +78,7 @@ class MassAssignmentAuditTest extends TestCase
         $tenant->memberships()->create(['user_id' => $owner->id, 'role' => TenantMembershipRole::Owner]);
 
         $this->actingAs($owner);
-        app(\App\Services\TenantContext::class)->setMembership(
+        app(TenantContext::class)->setMembership(
             $tenant->memberships()->where('user_id', $owner->id)->first()
         );
 
@@ -82,12 +86,12 @@ class MassAssignmentAuditTest extends TestCase
         $staffMembership = $tenant->memberships()->create(['user_id' => $staff->id, 'role' => TenantMembershipRole::Cashier]);
 
         try {
-            \Livewire\Livewire::test('pages::tenant.users.index')
+            Livewire::test('pages::tenant.users.index')
                 ->call('openEdit', $staffMembership->id)
                 ->set('role', 'super_admin')
                 ->call('save')
                 ->assertHasErrors('role');
-        } catch (\Illuminate\Validation\ValidationException) {
+        } catch (ValidationException) {
             // Also acceptable — either way, the role must not be persisted.
         }
 
@@ -108,13 +112,13 @@ class MassAssignmentAuditTest extends TestCase
     {
         $tenant = Tenant::factory()->create();
         $plan = SubscriptionPlan::factory()->create();
-        $subscription = Subscription::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->create([
+        $subscription = Subscription::withoutGlobalScope(TenantScope::class)->create([
             'tenant_id' => $tenant->id,
             'subscription_plan_id' => $plan->id,
             'billing_period' => BillingPeriod::Monthly,
             'status' => SubscriptionStatus::Trial,
         ]);
-        $order = PayPalOrder::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->create([
+        $order = PayPalOrder::withoutGlobalScope(TenantScope::class)->create([
             'tenant_id' => $tenant->id,
             'subscription_id' => $subscription->id,
             'subscription_plan_id' => $plan->id,

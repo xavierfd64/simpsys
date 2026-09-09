@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Enums\TenantMembershipRole;
+use App\Models\Product;
+use App\Models\Scopes\TenantScope;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Services\TenantContext;
@@ -10,6 +12,7 @@ use App\Support\TenantStorage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -136,7 +139,7 @@ class FileUploadSecurityTest extends TestCase
 
         $file = UploadedFile::fake()->createWithContent('shell.pht', $jpegBytes)->mimeType('image/jpeg');
 
-        \Livewire\Livewire::test('pages::tenant.products.index')
+        Livewire::test('pages::tenant.products.index')
             ->call('openCreate')
             ->set('name', 'Test Product')
             ->set('type', 'ready_to_sell')
@@ -145,7 +148,7 @@ class FileUploadSecurityTest extends TestCase
             ->set('image', $file)
             ->call('save');
 
-        $product = \App\Models\Product::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->where('name', 'Test Product')->firstOrFail();
+        $product = Product::withoutGlobalScope(TenantScope::class)->where('name', 'Test Product')->firstOrFail();
 
         $this->assertStringEndsNotWith('.pht', $product->image_path);
     }
