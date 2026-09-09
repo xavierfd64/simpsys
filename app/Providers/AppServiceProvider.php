@@ -50,6 +50,29 @@ class AppServiceProvider extends ServiceProvider
         // without touching Unicode support or any migration file directly.
         Schema::defaultStringLength(191);
 
+        // config/session.php's 'secure' option defaults to whatever
+        // SESSION_SECURE_COOKIE is in .env — null if the admin never set
+        // it, which PHP treats as "not secure" (the cookie would be sent
+        // over plain HTTP too, even on a site that's actually served over
+        // HTTPS). This app's own installer never asks for or writes that
+        // variable, and the "no manual .env editing" deployment promise
+        // means most real installs would silently ship with an
+        // unnecessarily insecure session cookie on an HTTPS site. Checked
+        // via config(), not env() directly — env() always returns null
+        // outside config files once `php artisan config:cache` has run (a
+        // common production step on shared hosting), which would make this
+        // wrongly override even a deliberate explicit 'false'; config()
+        // reflects the real value baked in at cache time either way. Only
+        // override when the admin hasn't explicitly configured a value (a
+        // deliberate 'false' — e.g. a local HTTP-only dev/staging box —
+        // must still be respected), and derive it from the actual request
+        // instead: secure exactly when this request itself arrived over
+        // HTTPS, which naturally also survives a plain-HTTP site later
+        // getting an SSL certificate with no config change needed.
+        if (config('session.secure') === null) {
+            config(['session.secure' => request()->isSecure()]);
+        }
+
         // Livewire only replays a hardcoded allowlist of framework middleware
         // (auth, SubstituteBindings, ...) on subsequent component action
         // requests (wire:click/wire:submit hit /livewire/update, not the
