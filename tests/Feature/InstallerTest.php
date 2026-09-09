@@ -184,4 +184,24 @@ class InstallerTest extends TestCase
 
         $this->assertTrue(app(InstallerService::class)->isInstalled());
     }
+
+    /**
+     * InstallerService::testConnection() builds a PDO DSN by interpolating
+     * the submitted host/port/database directly (necessary — PDO has no
+     * parameterized-connection-string API). A non-numeric port could
+     * otherwise inject extra DSN parameters; the wizard's own validation is
+     * what actually closes this off, so it's tested here rather than left
+     * as an assumption about InstallerService's behavior.
+     */
+    public function test_wizard_rejects_a_non_numeric_database_port(): void
+    {
+        Livewire::test('pages::install.wizard')
+            ->set('step', 2)
+            ->set('db_host', 'localhost')
+            ->set('db_port', '3306;unix_socket=/tmp/evil.sock')
+            ->set('db_database', 'test')
+            ->set('db_username', 'test')
+            ->call('submitDatabase')
+            ->assertHasErrors(['db_port']);
+    }
 }
