@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Controllers\PayPalCancelController;
+use App\Http\Controllers\PayPalReturnController;
+use App\Http\Controllers\PayPalWebhookController;
 use App\Http\Controllers\PlatformUpdateUploadController;
 use App\Http\Controllers\SwitchBranchController;
 use Illuminate\Http\Request;
@@ -50,8 +53,14 @@ Route::middleware(['auth', 'tenant'])->prefix('app')->name('app.')->group(functi
         Route::livewire('/users', 'pages::tenant.users.index')->name('users.index');
         Route::livewire('/branches', 'pages::tenant.branches.index')->name('branches.index');
         Route::livewire('/billing', 'pages::tenant.billing')->name('billing');
+        Route::get('/billing/paypal/return', PayPalReturnController::class)->name('billing.paypal.return');
+        Route::get('/billing/paypal/cancel', PayPalCancelController::class)->name('billing.paypal.cancel');
     });
 });
+
+// Public: PayPal itself POSTs here with no session/CSRF token, verified via
+// PayPal's own webhook-signature API instead (see PayPalWebhookController).
+Route::post('/webhooks/paypal', PayPalWebhookController::class)->name('webhooks.paypal');
 
 Route::post('/switch-branch', SwitchBranchController::class)
     ->middleware('auth')

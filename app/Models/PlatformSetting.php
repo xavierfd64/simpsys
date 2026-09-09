@@ -14,6 +14,8 @@ use Illuminate\Database\Eloquent\Model;
     'mail_mailer', 'mail_host', 'mail_port', 'mail_encryption', 'mail_username',
     'mail_password', 'mail_from_address', 'mail_from_name',
     'theme_primary_color', 'theme_font',
+    'manual_payment_enabled', 'paypal_enabled', 'paypal_environment', 'paypal_client_id',
+    'paypal_client_secret', 'paypal_webhook_id', 'paypal_currency',
 ])]
 class PlatformSetting extends Model
 {
@@ -50,12 +52,26 @@ class PlatformSetting extends Model
     {
         return [
             'mail_password' => 'encrypted',
+            'paypal_client_secret' => 'encrypted',
+            'manual_payment_enabled' => 'boolean',
+            'paypal_enabled' => 'boolean',
         ];
     }
 
     public static function current(): self
     {
-        return static::query()->firstOrCreate([]);
+        // The boolean-cast columns' schema-level defaults only apply to
+        // the row MySQL/SQLite actually stores — a freshly created()
+        // instance doesn't get re-fetched from the database afterward, so
+        // without these explicit values a brand-new row's in-memory
+        // manual_payment_enabled/paypal_enabled would read back as null
+        // (missing from the model's attributes entirely) rather than the
+        // intended true/false, which a strictly bool-typed property
+        // assignment elsewhere then rejects outright.
+        return static::query()->firstOrCreate([], [
+            'manual_payment_enabled' => true,
+            'paypal_enabled' => false,
+        ]);
     }
 
     public function displayName(): string
@@ -76,5 +92,25 @@ class PlatformSetting extends Model
     public function hasMailConfigured(): bool
     {
         return filled($this->mail_mailer) && filled($this->mail_host) && filled($this->mail_from_address);
+    }
+
+    /**
+     * PayPal is only genuinely offered once it's both turned on and has
+     * the credentials it needs to actually call the API — enabling the
+     * toggle alone (e.g. mid-setup, before Test Connection has ever
+     * succeeded) must not surface a checkout option that can't work.
+     */
+    public function isPayPalConfigured(): bool
+    {
+        return $this->paypal_enabled
+            && filled($this->paypal_client_id)
+            && filled($this->paypal_client_secret);
+    }
+
+    public function paypalApiBaseUrl(): string
+    {
+        return $this->paypal_environment === 'live'
+            ? 'https://api-m.paypal.com'
+            : 'https://api-m.sandbox.paypal.com';
     }
 }

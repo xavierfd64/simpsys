@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsurePlatformAdmin;
 use App\Http\Middleware\EnsureTenantRole;
 use App\Http\Middleware\IdentifyTenant;
 use App\Services\BillingReminderService;
+use App\Services\PayPalClient;
 use App\Services\TenantContext;
 use App\Support\MailConfigurator;
 use App\Support\OpportunisticScheduler;
@@ -24,6 +25,12 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(TenantContext::class);
+
+        // Without this binding, container auto-resolution would build
+        // PayPalClient's PlatformSetting constructor argument as a bare
+        // `new PlatformSetting` (no attributes at all) rather than the
+        // actual saved settings row — every credential would read blank.
+        $this->app->bind(PayPalClient::class, fn () => PayPalClient::fromSettings());
     }
 
     /**

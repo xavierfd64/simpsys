@@ -66,6 +66,22 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
         return SubscriptionPlan::query()->where('is_active', true)->orderBy('sort_order')->get();
     }
 
+    /**
+     * PayPal orders that never completed (pending/failed/denied/cancelled)
+     * — a completed one already appears in Billing History as a normal
+     * BillingPayment, so this is only for the cases that table can't show:
+     * an attempt that didn't result in a recorded payment.
+     */
+    public function getPaypalOrdersProperty()
+    {
+        return $this->business->paypalOrders()
+            ->where('status', '!=', 'completed')
+            ->with('plan')
+            ->latest('id')
+            ->limit(10)
+            ->get();
+    }
+
     protected function refreshTenant(): void
     {
         $this->business = $this->business->fresh(['memberships.user', 'subscriptions.plan', 'billingPayments']);
@@ -111,14 +127,14 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
         $this->redirectRoute('admin.businesses.index', navigate: true);
     }
 
-    public function changePlan(): void
+    public function changePlan(SubscriptionService $service): void
     {
         $this->validate(['selected_plan_id' => ['required', 'exists:subscription_plans,id']]);
 
         $subscription = $this->subscription;
 
         if ($subscription) {
-            $subscription->update(['subscription_plan_id' => $this->selected_plan_id]);
+            $service->changePlan($subscription, (int) $this->selected_plan_id);
         }
 
         $this->refreshTenant();
@@ -301,7 +317,12 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
                     <tr>
                         <td class="px-4 py-2 text-muted">{{ $payment->paid_at->format('M j, Y') }}</td>
                         <td class="px-4 py-2 text-ink">₱{{ number_format($payment->amount) }}</td>
-                        <td class="px-4 py-2 text-muted">{{ $payment->payment_method_label }}</td>
+                        <td class="px-4 py-2 text-muted">
+                            {{ $payment->payment_method_label }}
+                            @if ($payment->isPayPal())
+                                <span class="ml-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">VERIFIED</span>
+                            @endif
+                        </td>
                         <td class="px-4 py-2 text-muted">{{ $payment->reference ?? '—' }}</td>
                     </tr>
                 @empty
@@ -310,6 +331,42 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
             </tbody>
         </table>
     </div>
+
+    @if ($this->paypalOrders->isNotEmpty())
+        <div class="rounded-xl border border-hairline bg-surface">
+            <div class="border-b border-hairline p-4">
+                <h3 class="text-sm font-medium text-ink">PayPal Attempts (not completed)</h3>
+            </div>
+            <table class="w-full text-left text-sm">
+                <thead class="text-xs font-medium uppercase tracking-wide text-muted">
+                    <tr>
+                        <th class="px-4 py-2">Date</th>
+                        <th class="px-4 py-2">Plan</th>
+                        <th class="px-4 py-2">Amount</th>
+                        <th class="px-4 py-2">Status</th>
+                        <th class="px-4 py-2">PayPal Order ID</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-hairline">
+                    @foreach ($this->paypalOrders as $order)
+                        <tr>
+                            <td class="px-4 py-2 text-muted">{{ $order->created_at->format('M j, Y') }}</td>
+                            <td class="px-4 py-2 text-muted">{{ $order->plan->name }} ({{ ucfirst($order->billing_period) }})</td>
+                            <td class="px-4 py-2 text-ink">{{ $order->currency }} {{ number_format($order->amount) }}</td>
+                            <td class="px-4 py-2">
+                                <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ match ($order->status) {
+                                    'cancelled' => 'bg-slate-100 text-slate-600',
+                                    'denied', 'failed' => 'bg-red-50 text-danger-500',
+                                    default => 'bg-amber-50 text-amber-700',
+                                } }}">{{ ucfirst($order->status) }}</span>
+                            </td>
+                            <td class="px-4 py-2 text-muted">{{ $order->paypal_order_id }}</td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    @endif
 
     @if ($showPaymentModal)
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

@@ -103,9 +103,17 @@ class SubscriptionService
     }
 
     /**
-     * Record a manually-confirmed external payment (GCash, bank transfer,
-     * etc. verified outside the app) and extend the subscription by one
-     * billing period from it.
+     * Record a confirmed payment and extend the subscription by one
+     * billing period from it. Used both for a manually-confirmed external
+     * payment (GCash, bank transfer, etc. — an admin attesting they
+     * verified it, $admin set, $paypalMeta empty) and for a PayPal payment
+     * PayPal itself has already confirmed server-side ($admin null,
+     * $paypalMeta carrying the order/capture identifiers) — either way this
+     * remains the one place a payment is recorded and a subscription
+     * renewed, so the billing statement and every admin view stay
+     * consistent regardless of which payment method produced the row.
+     *
+     * @param  array{paypal_order_id?: string, paypal_capture_id?: string, paypal_payer_email?: ?string}  $paypalMeta
      */
     public function recordPayment(
         Subscription $subscription,
@@ -114,8 +122,9 @@ class SubscriptionService
         ?string $reference,
         ?string $notes,
         ?User $admin,
+        array $paypalMeta = [],
     ): BillingPayment {
-        $payment = DB::transaction(function () use ($subscription, $amount, $paymentMethodLabel, $reference, $notes, $admin) {
+        $payment = DB::transaction(function () use ($subscription, $amount, $paymentMethodLabel, $reference, $notes, $admin, $paypalMeta) {
             $payment = BillingPayment::create([
                 'tenant_id' => $subscription->tenant_id,
                 'subscription_id' => $subscription->id,
@@ -125,6 +134,7 @@ class SubscriptionService
                 'reference' => $reference,
                 'paid_at' => now()->toDateString(),
                 'notes' => $notes,
+                ...$paypalMeta,
             ]);
 
             $this->renew($subscription);
@@ -136,6 +146,20 @@ class SubscriptionService
         SafeMailer::send($owner?->email, new PaymentReceivedMail($payment));
 
         return $payment;
+    }
+
+    /**
+     * Changes which plan a subscription is on without touching its status
+     * or period — the admin's existing "Change Plan" action and the
+     * PayPal checkout completion path (buying/renewing under a possibly
+     * different plan than the one currently active) both go through this
+     * single method rather than each updating the column directly.
+     */
+    public function changePlan(Subscription $subscription, int $subscriptionPlanId): Subscription
+    {
+        $subscription->update(['subscription_plan_id' => $subscriptionPlanId]);
+
+        return $subscription->fresh();
     }
 
     protected function periodEnd(Subscription $subscription): Carbon

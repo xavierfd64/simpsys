@@ -554,6 +554,131 @@ shared-hosting-appropriate.
   confirmed to reject the same file outright — all three against the
   literal file being delivered, not a synthetic stand-in.
 
+## PayPal payment integration
+
+Full setup/testing/security notes live in `docs/PAYPAL_INTEGRATION.md` — this
+section only records the implementation decisions and pitfalls found along
+the way.
+
+- **PayPal Orders v2 (one-time order → approve → capture), not PayPal
+  Subscriptions.** Subscription plans are flat per-period prices renewed by
+  extending `current_period_end` (see `SubscriptionService`), not a
+  recurring/metered billing engine — Orders v2 maps directly onto "buy one
+  more period" without introducing a second, PayPal-side recurring-billing
+  concept that would need to be kept in sync with BizManager's own
+  plan/price data. `App\Models\PayPalOrder` is the one new concept: an
+  internal "pending payment" record created before PayPal is ever called,
+  which always resolves back to one of a tenant's existing `Subscription`
+  rows. Once PayPal confirms a capture `COMPLETED`,
+  `PayPalCheckoutService::completeOrder()` calls
+  `SubscriptionService::recordPayment()` — the exact same method a Platform
+  Admin's manual "Record Payment" action already uses — so a PayPal payment
+  produces a normal `BillingPayment`, renews the subscription, and syncs
+  `Tenant.status` identically to a manual one; every existing billing view
+  (statement, admin business detail page) needed zero changes to display it
+  correctly. `SubscriptionService::recordPayment()` gained one new optional
+  trailing parameter (`array $paypalMeta = []`, merged into the created
+  row) and a new `changePlan()` method (extracted from the admin page's
+  existing inline `$subscription->update([...])`, reused by both the admin
+  UI and PayPal completion when a purchase is for a different plan than the
+  one currently active) — both backward compatible, no existing call site
+  changed behavior.
+- **Eloquent's snake_case convention mangles "PayPal" into "pay_pal", not
+  "paypal."** `class PayPalOrder` and `class PayPalWebhookEvent` both need
+  an explicit `protected $table = 'paypal_...'` — without it Eloquent looks
+  for `pay_pal_orders`/`pay_pal_webhook_events` (splitting "PayPal" into
+  "Pay"+"Pal" like any other two-word class name) and every query throws
+  "no such table," caught immediately by the very first test run against
+  a page that touches the relation.
+- **`PlatformSetting::current()`'s `firstOrCreate([])` doesn't retroactively
+  pick up a newly-added column's SQL-level `->default(...)` on a row it
+  creates for the first time.** Adding `manual_payment_enabled`/
+  `paypal_enabled` as boolean-cast columns with schema defaults broke
+  four unrelated, pre-existing settings tests the moment a strictly
+  `bool`-typed Livewire property was assigned from them
+  (`Cannot assign null to property ... of type bool`) — a freshly
+  `create()`'d Eloquent model instance keeps only what was explicitly
+  passed to it in memory; it is never re-fetched from the database
+  afterward, so a column's schema default exists in the stored row but not
+  in the in-memory object `current()` just returned. Every previous column
+  on this table was nullable with no PHP-side type strict enough to reject
+  `null`, so this class of bug had never surfaced before. Fixed by passing
+  explicit defaults as `firstOrCreate([], ['manual_payment_enabled' =>
+  true, 'paypal_enabled' => false])` rather than relying on the schema
+  default alone — cheaper than adding a `->fresh()` re-query to a method
+  called on nearly every request.
+- **A container binding is required for `PayPalClient` to read real saved
+  settings.** `PayPalCheckoutService`'s constructor type-hints `PayPalClient
+  $client`; without an explicit binding, Laravel's auto-resolution
+  satisfies `PayPalClient`'s own `PlatformSetting $settings` constructor
+  argument with a bare `new PlatformSetting` (no attributes at all,
+  `client_id`/`client_secret` both blank) instead of the actual saved row —
+  every call would fail with "PayPal is not configured" regardless of what
+  was actually saved. Fixed with `$this->app->bind(PayPalClient::class, fn
+  () => PayPalClient::fromSettings())` in `AppServiceProvider::register()`.
+  The admin settings page's "Test PayPal Connection" action deliberately
+  bypasses this binding (`new PayPalClient($this->transientPayPalSettings())`)
+  since it needs to test whatever is currently typed into the form,
+  including changes not yet saved.
+- **A transient settings object for testing unsaved form values must be
+  built from decrypted plaintext, never from `getAttributes()`.** The
+  "Test PayPal Connection" button (mirroring the existing "Send Test
+  Email" pattern of testing not-yet-saved values) needs a `PlatformSetting`
+  instance carrying the form's current Client Secret without persisting
+  it. The first version built one via `new PlatformSetting($saved
+  ->getAttributes())` — `getAttributes()` returns the raw, still-encrypted
+  ciphertext for an `encrypted`-cast column, and assigning that into a
+  fresh model re-triggers the cast's own encryption on `set`, encrypting
+  already-encrypted bytes; reading it back decrypts only one layer,
+  yielding garbage instead of the real secret. Caught before ever running
+  it, by re-reading the diff and reasoning through what `getAttributes()`
+  actually returns for a custom cast. Fixed by assigning only already
+  decrypted accessor values (`$saved->paypal_client_secret`, not
+  `getAttributes()['paypal_client_secret']`) onto a plain `new
+  PlatformSetting`.
+- **`Http::fake()` called a second time in one test does not replace an
+  already-registered URL pattern — Laravel matches fakes in registration
+  order, not last-registered-wins.** A test simulating "the connection
+  succeeds, then later fails" by calling `Http::fake([...])` twice with the
+  same wildcard pattern kept getting the *first* fake's response on the
+  second call, discovered by literally reproducing it in isolation outside
+  PHPUnit before concluding it wasn't a bug in the app code being tested.
+  Fixed by using one `Http::fake()` call with `Http::sequence()->push(...)
+  ->push(...)` for that endpoint instead — the correct way to represent a
+  changing response across repeated calls within a single test.
+- **Idempotency against a concurrent browser-return/webhook race uses a
+  conditional UPDATE, not a read-then-write check.** `PayPalCheckoutService
+  ::completeOrder()` can legitimately be called twice for the same order —
+  once from the customer's browser returning from PayPal, once from a
+  webhook (PayPal explicitly may also redeliver the same webhook event
+  regardless). A naive "check status, then update" has a race window
+  between the two steps; the actual write is
+  `PayPalOrder::where('id', $id)->where('status', '!=', 'completed')
+  ->update([...])`, whose affected-row count (0 or 1) is the only source of
+  truth for "did *this* call win the race" — everyone else safely falls
+  through to "already processed" without a second `BillingPayment` ever
+  being created. Verified this guard actually matters (not just looks
+  correct) with the project's stash-and-revert discipline: removing the
+  earlier `isCompleted()` short-circuit and re-running the idempotency test
+  showed the capture endpoint hit 3 times instead of once, confirmed, then
+  restored.
+- **A webhook signature is verified via PayPal's own API, never
+  reimplemented locally.** `PayPalClient::verifyWebhookSignature()` POSTs
+  the five `Paypal-Transmission-*`/`Paypal-Cert-Url`/`Paypal-Auth-Algo`
+  request headers plus the raw event body to PayPal's
+  `/v1/notifications/verify-webhook-signature` endpoint and trusts only a
+  `"verification_status": "SUCCESS"` response — avoids this app needing to
+  implement certificate-chain/RSA verification itself, and an event whose
+  signature doesn't verify is rejected before any of its fields (order id,
+  capture status, etc.) are read for any purpose.
+- **`PAYMENT.CAPTURE.PENDING` deliberately does nothing.** The webhook
+  handler's event dispatch has no case for it at all (falls through to the
+  default no-op) — activating on "pending" would violate the same
+  "never trust an unverified/incomplete claim" rule this project already
+  applies to manual payments; only a `COMPLETED` capture (confirmed by
+  BizManager's own call to PayPal's capture API, whether triggered by the
+  browser return or a webhook) can activate a subscription.
+
 ## Automation audit (round 2)
 
 A review pass across every customer-facing workflow, done alongside the multi-
@@ -861,6 +986,28 @@ Tracking the master instruction's Development Order (section 35):
       a new `PlatformUpdateService::dryRun()` path (one additional
       optional manifest field, not a second update system) without
       changing any real file, migration, or `VERSION`.
+- [x] **PayPal payment integration**: PayPal added as a second, optional
+      payment method alongside the existing Manual/Fund Transfer workflow
+      (which is unchanged and stays on by default). Uses PayPal's Orders v2
+      API (`App\Services\PayPalClient` — OAuth, create/capture order,
+      webhook signature verification, no SDK dependency) rather than
+      PayPal Subscriptions, matching BizManager's own flat-price-per-period
+      billing model (see "PayPal payment integration" above for the full
+      reasoning and every pitfall found building it). A tenant owner can
+      now buy/renew a plan from `/app/billing` itself (a genuinely new
+      capability — previously only a Platform Admin could change a plan or
+      record a payment); choosing PayPal creates an internal `PayPalOrder`
+      record with a server-computed price, redirects to PayPal, and only
+      activates the subscription (via the existing
+      `SubscriptionService::recordPayment()`) once BizManager's own server
+      confirms the capture completed — via the browser-return route, a
+      webhook, or both, made safely idempotent with a conditional database
+      update. Platform Admin configures everything (credentials,
+      environment, webhook id, currency, a Test Connection action) from
+      Settings → Payment Settings, entirely through the UI — no `.env`
+      edit, and the Client Secret is encrypted at rest and never
+      redisplayed. See `docs/PAYPAL_INTEGRATION.md` for setup/testing
+      instructions.
 
 ## Demo accounts (seeded, password `password`)
 

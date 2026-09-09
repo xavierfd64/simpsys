@@ -230,6 +230,11 @@ class Tenant extends Model
         return $this->hasMany(BillingPayment::class);
     }
 
+    public function paypalOrders(): HasMany
+    {
+        return $this->hasMany(PayPalOrder::class);
+    }
+
     /**
      * UTC datetime bounds for a single calendar day *in this tenant's
      * timezone*. Timestamp columns are always stored in UTC, so comparing

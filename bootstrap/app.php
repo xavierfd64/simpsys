@@ -20,6 +20,11 @@ return Application::configure(basePath: dirname(__DIR__))
             RedirectIfNotInstalled::class,
         ]);
 
+        // PayPal POSTs webhook events with no session/CSRF token of any
+        // kind — authenticity is instead verified via PayPal's own
+        // webhook-signature API inside PayPalWebhookController itself.
+        $middleware->validateCsrfTokens(except: ['webhooks/paypal']);
+
         $middleware->alias([
             'tenant' => IdentifyTenant::class,
             'platform.admin' => EnsurePlatformAdmin::class,

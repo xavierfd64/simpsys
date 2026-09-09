@@ -7,7 +7,10 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['tenant_id', 'subscription_id', 'recorded_by', 'amount', 'payment_method_label', 'reference', 'paid_at', 'notes'])]
+#[Fillable([
+    'tenant_id', 'subscription_id', 'recorded_by', 'amount', 'payment_method_label', 'reference', 'paid_at', 'notes',
+    'paypal_order_id', 'paypal_capture_id', 'paypal_payer_email',
+])]
 class BillingPayment extends Model
 {
     use HasUuid;
@@ -32,5 +35,15 @@ class BillingPayment extends Model
     public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by');
+    }
+
+    /**
+     * A PayPal-originated payment is identified by carrying an order id —
+     * there is no separate "payment_method" taxonomy column, since this
+     * one fact is all any call site actually needs to know.
+     */
+    public function isPayPal(): bool
+    {
+        return filled($this->paypal_order_id);
     }
 }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\PlatformSetting;
+use App\Services\PayPalClient;
 use App\Support\ColorTheme;
 use App\Support\MailConfigurator;
 use App\Support\TenantStorage;
@@ -56,6 +57,26 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
 
     public string $theme_font = 'inter';
 
+    public bool $manual_payment_enabled = true;
+
+    public bool $paypal_enabled = false;
+
+    public string $paypal_environment = 'sandbox';
+
+    public string $paypal_client_id = '';
+
+    public string $paypal_client_secret = '';
+
+    public bool $has_paypal_client_secret = false;
+
+    public string $paypal_webhook_id = '';
+
+    public string $paypal_currency = 'PHP';
+
+    public ?string $paypal_test_status = null;
+
+    public string $paypal_test_message = '';
+
     public function mount(): void
     {
         $settings = PlatformSetting::current();
@@ -77,6 +98,14 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
         $this->mail_from_address = (string) $settings->mail_from_address;
         $this->mail_from_name = (string) $settings->mail_from_name;
         $this->has_mail_password = filled($settings->mail_password);
+
+        $this->manual_payment_enabled = $settings->manual_payment_enabled;
+        $this->paypal_enabled = $settings->paypal_enabled;
+        $this->paypal_environment = $settings->paypal_environment ?: 'sandbox';
+        $this->paypal_client_id = (string) $settings->paypal_client_id;
+        $this->has_paypal_client_secret = filled($settings->paypal_client_secret);
+        $this->paypal_webhook_id = (string) $settings->paypal_webhook_id;
+        $this->paypal_currency = $settings->paypal_currency ?: 'PHP';
     }
 
     public function save(): void
@@ -235,6 +264,98 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
             $this->test_email_status = 'failure';
             $this->test_email_message = 'Failed to send: '.$e->getMessage();
         }
+    }
+
+    public function savePaymentMethods(): void
+    {
+        PlatformSetting::current()->update([
+            'manual_payment_enabled' => $this->manual_payment_enabled,
+        ]);
+
+        session()->flash('status', 'Payment methods updated.');
+    }
+
+    /**
+     * A transient (never-persisted) settings instance built from whatever
+     * is currently in the form — mirrors the existing "Send Test Email"
+     * pattern of testing not-yet-saved values, and never requires the
+     * admin to save first just to find out credentials are wrong.
+     */
+    protected function transientPayPalSettings(): PlatformSetting
+    {
+        // Built from decrypted plaintext accessor values only — never from
+        // getAttributes() (the raw, still-encrypted ciphertext), which
+        // would otherwise get encrypted a second time the moment it's
+        // assigned onto a new model instance and come back unreadable.
+        $saved = PlatformSetting::current();
+        $settings = new PlatformSetting;
+
+        $settings->platform_name = $saved->platform_name;
+        $settings->paypal_environment = $this->paypal_environment;
+        $settings->paypal_client_id = $this->paypal_client_id;
+        $settings->paypal_client_secret = filled($this->paypal_client_secret) ? $this->paypal_client_secret : $saved->paypal_client_secret;
+        $settings->paypal_webhook_id = $this->paypal_webhook_id;
+
+        return $settings;
+    }
+
+    public function testPayPalConnection(): void
+    {
+        $this->validate([
+            'paypal_client_id' => ['required', 'string'],
+            'paypal_environment' => ['required', 'in:sandbox,live'],
+        ], attributes: ['paypal_client_id' => 'Client ID']);
+
+        if (blank($this->paypal_client_secret) && ! $this->has_paypal_client_secret) {
+            $this->paypal_test_status = 'failure';
+            $this->paypal_test_message = 'Please enter a Client Secret first.';
+
+            return;
+        }
+
+        $result = (new PayPalClient($this->transientPayPalSettings()))->testConnection();
+
+        $this->paypal_test_status = $result['success'] ? 'success' : 'failure';
+        $this->paypal_test_message = $result['message'];
+    }
+
+    public function savePayPalSettings(): void
+    {
+        $data = $this->validate([
+            'paypal_environment' => ['required', 'in:sandbox,live'],
+            'paypal_client_id' => ['nullable', 'string', 'max:255'],
+            'paypal_webhook_id' => ['nullable', 'string', 'max:255'],
+            'paypal_currency' => ['required', 'alpha', 'size:3'],
+            'paypal_enabled' => ['boolean'],
+        ], attributes: ['paypal_client_id' => 'Client ID', 'paypal_webhook_id' => 'Webhook ID']);
+
+        $settings = PlatformSetting::current();
+        $hasSecret = filled($this->paypal_client_secret) || filled($settings->paypal_client_secret);
+
+        if ($this->paypal_enabled && (blank($data['paypal_client_id']) || ! $hasSecret)) {
+            $this->addError('paypal_client_id', 'A Client ID and Client Secret are both required to enable PayPal.');
+
+            return;
+        }
+
+        $attributes = [
+            'paypal_enabled' => $this->paypal_enabled,
+            'paypal_environment' => $data['paypal_environment'],
+            'paypal_client_id' => $data['paypal_client_id'] ?: null,
+            'paypal_webhook_id' => $data['paypal_webhook_id'] ?: null,
+            'paypal_currency' => strtoupper($data['paypal_currency']),
+        ];
+
+        if (filled($this->paypal_client_secret)) {
+            $attributes['paypal_client_secret'] = $this->paypal_client_secret;
+        }
+
+        $settings->update($attributes);
+
+        $this->paypal_client_secret = '';
+        $this->has_paypal_client_secret = filled($settings->fresh()->paypal_client_secret);
+
+        session()->flash('status', 'PayPal settings updated.');
     }
 }; ?>
 
@@ -482,6 +603,133 @@ new #[Layout('layouts.admin')] #[Title('Platform Settings')] class extends Compo
                     Send Test Email
                 </button>
             </form>
+        </div>
+    </div>
+
+    <div class="rounded-xl border border-hairline bg-surface p-6">
+        <h2 class="text-base font-semibold text-ink">Payment Settings</h2>
+        <p class="mt-1 text-sm text-muted">Choose which payment methods businesses can use to pay for their subscription.</p>
+
+        <form wire:submit="savePaymentMethods" class="mt-4 space-y-3">
+            <label class="flex items-center justify-between rounded-lg border border-hairline px-4 py-3">
+                <span>
+                    <span class="block text-sm font-medium text-ink">Manual / Fund Transfer</span>
+                    <span class="block text-xs text-muted">A Platform Admin verifies the payment and records it manually — the existing workflow.</span>
+                </span>
+                <input wire:model="manual_payment_enabled" type="checkbox" class="h-5 w-5 rounded border-hairline text-primary-600 focus:ring-primary-500">
+            </label>
+            <label class="flex items-center justify-between rounded-lg border border-hairline px-4 py-3">
+                <span>
+                    <span class="block text-sm font-medium text-ink">PayPal</span>
+                    <span class="block text-xs text-muted">Automatic — the subscription activates as soon as PayPal confirms payment. Configure below.</span>
+                </span>
+                <span class="text-xs font-medium {{ $paypal_enabled ? 'text-success-500' : 'text-muted' }}">{{ $paypal_enabled ? '✓ Enabled' : 'Disabled' }}</span>
+            </label>
+            <button type="submit"
+                    class="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700"
+                    wire:loading.attr="disabled" wire:target="savePaymentMethods">
+                Save Payment Methods
+            </button>
+        </form>
+
+        <div class="mt-6 border-t border-hairline pt-6">
+            <div class="flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-ink">PayPal Configuration</h3>
+                @if (PlatformSetting::current()->isPayPalConfigured())
+                    <span class="inline-flex items-center gap-1 rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                        <x-lucide-circle-check class="h-3.5 w-3.5" /> Connected
+                    </span>
+                @endif
+            </div>
+            <p class="mt-1 text-sm text-muted">
+                Get your Client ID and Client Secret from your
+                <a href="https://developer.paypal.com/dashboard/applications" target="_blank" rel="noopener" class="text-primary-600 hover:underline">PayPal Developer App</a>.
+                Use Sandbox to test before switching to Live.
+            </p>
+
+            @if ($paypal_test_status === 'success')
+                <div class="mt-3 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">✓ {{ $paypal_test_message }}</div>
+            @elseif ($paypal_test_status === 'failure')
+                <div class="mt-3 rounded-lg bg-red-50 px-4 py-3 text-sm text-danger-500">✕ {{ $paypal_test_message }}</div>
+            @endif
+
+            <form wire:submit="savePayPalSettings" class="mt-4 space-y-4">
+                <label class="flex items-center gap-2">
+                    <input wire:model="paypal_enabled" type="checkbox" class="h-5 w-5 rounded border-hairline text-primary-600 focus:ring-primary-500">
+                    <span class="text-sm font-medium text-ink">Enable PayPal at checkout</span>
+                </label>
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-ink">Environment</label>
+                        <select wire:model="paypal_environment" class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm">
+                            <option value="sandbox">Sandbox (testing)</option>
+                            <option value="live">Live (real payments)</option>
+                        </select>
+                        @error('paypal_environment') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                    </div>
+                    <div>
+                        <label class="mb-1 block text-sm font-medium text-ink">Currency</label>
+                        <input wire:model="paypal_currency" type="text" maxlength="3" placeholder="PHP"
+                               class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm uppercase focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                        @error('paypal_currency') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-ink">Client ID</label>
+                    <input wire:model="paypal_client_id" type="text" autocomplete="off"
+                           class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                    <p class="mt-1 text-xs text-muted">From your PayPal Developer App.</p>
+                    @error('paypal_client_id') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-ink">Client Secret</label>
+                    <input wire:model="paypal_client_secret" type="password" autocomplete="new-password"
+                           placeholder="{{ $has_paypal_client_secret ? '•••••••••••••••• (unchanged — leave blank to keep)' : '' }}"
+                           class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                    <p class="mt-1 text-xs text-muted">From your PayPal Developer App. Never shown again once saved.</p>
+                    @error('paypal_client_secret') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                </div>
+
+                <div>
+                    <label class="mb-1 block text-sm font-medium text-ink">Webhook ID</label>
+                    <input wire:model="paypal_webhook_id" type="text" autocomplete="off"
+                           class="w-full rounded-lg border border-hairline px-3 py-2.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500">
+                    <p class="mt-1 text-xs text-muted">
+                        Create a webhook in your PayPal app pointing to
+                        <code class="rounded bg-app-bg px-1 py-0.5">{{ url('/webhooks/paypal') }}</code>
+                        (events: Checkout order approved, Payment capture completed/denied/pending, Payment capture reversed), then paste its Webhook ID here.
+                    </p>
+                    @error('paypal_webhook_id') <p class="mt-1 text-sm text-danger-500">{{ $message }}</p> @enderror
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3">
+                    <button type="button" wire:click="testPayPalConnection"
+                            class="rounded-lg border border-hairline px-4 py-2.5 text-sm font-semibold text-ink hover:bg-app-bg"
+                            wire:loading.attr="disabled" wire:target="testPayPalConnection">
+                        Test PayPal Connection
+                    </button>
+                    <button type="submit"
+                            class="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-700"
+                            wire:loading.attr="disabled" wire:target="savePayPalSettings">
+                        Save Settings
+                    </button>
+                </div>
+            </form>
+
+            <div class="mt-6 rounded-lg bg-app-bg p-4">
+                <p class="text-xs font-semibold uppercase tracking-wide text-muted">Where do I get these?</p>
+                <ol class="mt-2 list-decimal space-y-1 pl-4 text-xs text-muted">
+                    <li>Log in to your <a href="https://developer.paypal.com" target="_blank" rel="noopener" class="text-primary-600 hover:underline">PayPal Developer account</a>.</li>
+                    <li>Create (or open) a PayPal App under Apps &amp; Credentials.</li>
+                    <li>Copy the Client ID and Client Secret into the fields above.</li>
+                    <li>Add a webhook pointing to the URL shown above, then paste its Webhook ID.</li>
+                    <li>Click <strong>Test PayPal Connection</strong> to confirm the credentials work.</li>
+                    <li>Enable PayPal and save — test a real Sandbox payment before switching to Live.</li>
+                </ol>
+            </div>
         </div>
     </div>
 </div>
