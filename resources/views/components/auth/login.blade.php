@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\LoginProtectionService;
 use App\Support\Captcha;
@@ -106,8 +107,22 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
         if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
             $protection->recordFailure($this->email, $ip);
 
+            // Logged by email, never by password — the email itself isn't a
+            // secret and is exactly what a security review of login
+            // activity needs; user_id is left null since a failed attempt
+            // against an unknown email has no user to attach to.
+            AuditLog::record('LOGIN_FAILED', [
+                'description' => "Failed login attempt for {$this->email}",
+                'metadata' => ['email' => $this->email],
+            ]);
+
             if ($protection->isLockedOut($this->email)) {
                 $this->lockoutSecondsRemaining = $protection->secondsRemaining($this->email);
+
+                AuditLog::record('ACCOUNT_LOCKED', [
+                    'description' => "Account locked after repeated failed logins: {$this->email}",
+                    'metadata' => ['email' => $this->email],
+                ]);
 
                 throw ValidationException::withMessages(['email' => $this->lockoutMessage()]);
             }
@@ -138,12 +153,23 @@ new #[Layout('layouts.guest')] #[Title('Log In')] class extends Component
         }
 
         if ($user->is_platform_admin) {
+            AuditLog::record('LOGIN_SUCCESS', [
+                'user_id' => $user->id,
+                'description' => "Platform admin logged in: {$user->email}",
+            ]);
+
             $this->redirectRoute('admin.dashboard', navigate: true);
 
             return;
         }
 
-        if ($user->activeMembership()) {
+        if ($membership = $user->activeMembership()) {
+            AuditLog::record('LOGIN_SUCCESS', [
+                'user_id' => $user->id,
+                'tenant_id' => $membership->tenant_id,
+                'description' => "User logged in: {$user->email}",
+            ]);
+
             $this->redirectRoute($user->homeRouteName(), navigate: true);
 
             return;

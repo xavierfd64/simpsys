@@ -4,6 +4,7 @@ use App\Enums\SubscriptionStatus;
 use App\Enums\TenantStatus;
 use App\Mail\AccountReactivatedMail;
 use App\Mail\AccountSuspendedMail;
+use App\Models\AuditLog;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Services\SubscriptionService;
@@ -102,6 +103,13 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
         }
 
         SafeMailer::send($this->owner?->email, new AccountSuspendedMail($this->business));
+
+        AuditLog::record('ADMIN_ACTION', [
+            'tenant_id' => $this->business->id,
+            'user_id' => Auth::id(),
+            'description' => "Platform admin suspended business: {$this->business->name}",
+        ]);
+
         $this->refreshTenant();
         session()->flash('status', 'Business suspended.');
     }
@@ -117,12 +125,25 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
         }
 
         SafeMailer::send($this->owner?->email, new AccountReactivatedMail($this->business));
+
+        AuditLog::record('ADMIN_ACTION', [
+            'tenant_id' => $this->business->id,
+            'user_id' => Auth::id(),
+            'description' => "Platform admin reactivated business: {$this->business->name}",
+        ]);
+
         $this->refreshTenant();
         session()->flash('status', 'Business reactivated.');
     }
 
     public function deleteBusiness(): void
     {
+        AuditLog::record('ADMIN_ACTION', [
+            'tenant_id' => $this->business->id,
+            'user_id' => Auth::id(),
+            'description' => "Platform admin deleted business: {$this->business->name}",
+        ]);
+
         $this->business->delete();
         $this->redirectRoute('admin.businesses.index', navigate: true);
     }
@@ -159,6 +180,13 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
             default => null,
         };
 
+        AuditLog::record($action === 'activate' ? 'SUBSCRIPTION_ACTIVATED' : 'ADMIN_ACTION', [
+            'tenant_id' => $this->business->id,
+            'user_id' => Auth::id(),
+            'description' => "Platform admin performed subscription action '{$action}' for {$this->business->name}",
+            'metadata' => ['action' => $action],
+        ]);
+
         $this->refreshTenant();
         session()->flash('status', 'Subscription updated.');
     }
@@ -183,6 +211,13 @@ new #[Layout('layouts.admin')] #[Title('Business Details')] class extends Compon
                 $this->payment_notes ?: null,
                 Auth::user(),
             );
+
+            AuditLog::record('PAYMENT_COMPLETED', [
+                'tenant_id' => $this->business->id,
+                'user_id' => Auth::id(),
+                'description' => "Platform admin recorded a manual payment for {$this->business->name}",
+                'metadata' => ['amount' => (int) round($this->payment_amount), 'method' => $this->payment_method_label],
+            ]);
         }
 
         $this->showPaymentModal = false;

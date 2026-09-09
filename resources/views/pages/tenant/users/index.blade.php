@@ -2,6 +2,7 @@
 
 use App\Enums\TenantMembershipRole;
 use App\Enums\TenantMembershipStatus;
+use App\Models\AuditLog;
 use App\Models\TenantMembership;
 use App\Models\User;
 use App\Services\TenantContext;
@@ -102,8 +103,19 @@ new #[Layout('layouts.app')] #[Title('Users')] class extends Component
                 'role' => ['required', 'in:owner,cashier,kitchen_staff'],
             ]);
 
+            $previousRole = $membership->role;
+
             $membership->user->update(['name' => $this->name, 'email' => $this->email]);
             $membership->update(['role' => $this->role]);
+
+            if ($previousRole->value !== $this->role) {
+                AuditLog::record('ROLE_CHANGED', [
+                    'tenant_id' => $tenant->id,
+                    'user_id' => Auth::id(),
+                    'description' => "{$membership->user->email} role changed from {$previousRole->value} to {$this->role}",
+                    'metadata' => ['target_user_id' => $membership->user_id, 'from' => $previousRole->value, 'to' => $this->role],
+                ]);
+            }
         } else {
             $this->validate([
                 'name' => ['required', 'string', 'max:255'],
@@ -159,6 +171,13 @@ new #[Layout('layouts.app')] #[Title('Users')] class extends Component
 
         $membership = $this->ownMembershipOrFail($this->resettingMembershipId);
         $membership->user->update(['password' => Hash::make($this->new_password)]);
+
+        AuditLog::record('PASSWORD_CHANGED', [
+            'tenant_id' => app(TenantContext::class)->tenant()->id,
+            'user_id' => Auth::id(),
+            'description' => "Password reset by owner for {$membership->user->email}",
+            'metadata' => ['target_user_id' => $membership->user_id],
+        ]);
 
         $this->showPasswordModal = false;
         session()->flash('status', 'Password reset.');

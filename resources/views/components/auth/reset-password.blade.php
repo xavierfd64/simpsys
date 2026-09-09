@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Support\Facades\Hash;
@@ -46,6 +47,11 @@ new #[Layout('layouts.guest')] #[Title('Reset Password')] class extends Componen
                 ])->save();
 
                 event(new PasswordReset($user));
+
+                AuditLog::record('PASSWORD_RESET', [
+                    'user_id' => $user->id,
+                    'description' => "Password reset via emailed link: {$user->email}",
+                ]);
             }
         );
 
